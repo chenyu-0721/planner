@@ -41,25 +41,38 @@
       </div>
 
       <div>
-        <label class="field-label">日期</label>
+        <div class="flex rounded-md border border-line-2 p-0.5 mb-2 text-sm">
+          <button
+            v-for="m in MODES"
+            :key="m.key"
+            type="button"
+            class="flex-1 h-8 rounded cursor-pointer"
+            :class="form.isBackup === m.backup ? 'bg-accent-light text-accent font-semibold' : 'text-ink-2 hover:bg-hover'"
+            @click="setBackup(m.backup)"
+          >
+            {{ m.label }}
+          </button>
+        </div>
+        <label class="field-label">{{ form.isBackup ? '當作哪一天的備選' : '日期' }}</label>
         <select v-model="form.date" class="input select">
-          <option :value="null">未排入日期</option>
+          <option v-if="form.isBackup" :value="null">不指定日期（放在備選清單）</option>
           <option v-for="d in days" :key="d.date" :value="d.date">{{ d.title }}・{{ d.subtitle }}</option>
         </select>
+        <p v-if="form.isBackup" class="mt-1 text-[11px] leading-4 text-ink-4">備選不會排序號、連線，也不計入時間與預算；臨時需要時可以一鍵替換或排入行程。</p>
       </div>
 
       <div>
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="field-label">開始時間</label>
-            <input v-model="form.startTime" type="time" class="input" :disabled="!form.date" />
+            <input v-model="form.startTime" type="time" class="input" :disabled="!form.date || form.isBackup" />
           </div>
           <div>
             <label class="field-label">結束時間</label>
-            <input v-model="form.endTime" type="time" class="input" :disabled="!form.date" :min="form.startTime || undefined" />
+            <input v-model="form.endTime" type="time" class="input" :disabled="!form.date || form.isBackup" :min="form.startTime || undefined" />
           </div>
         </div>
-        <p v-if="!form.date" class="mt-1 text-xs text-ink-4">選擇日期後才能設定時間</p>
+        <p v-if="form.isBackup" class="mt-1 text-xs text-ink-4">排入行程後才能設定時間</p>
       </div>
 
       <div>
@@ -123,6 +136,13 @@ const error = ref('');
 const titleEl = ref(null);
 const arriveCostEl = ref(null);
 const managerOpen = ref(false);
+const MODES = [{ key: 'plan', label: '排入行程', backup: false }, { key: 'backup', label: '🔖 放到備選', backup: true }];
+
+function setBackup(backup) {
+  form.isBackup = backup;
+  // 排入行程一定要有日期
+  if (!backup && !form.date) form.date = props.days[0]?.date ?? null;
+}
 
 function pickBuiltIn(key) {
   form.category = key;
@@ -143,6 +163,7 @@ watch(() => props.modelValue, async (v) => {
     category: v.category || 'sight',
     customCategoryId: customCategories.some((c) => c.id === v.customCategoryId) ? v.customCategoryId : null,
     date: v.date ?? null,
+    isBackup: !v.date || !!v.isBackup,
     startTime: v.startTime || '',
     endTime: v.endTime || '',
     address: v.address || '',
@@ -169,8 +190,8 @@ function save() {
   emit('save', {
     ...form,
     title: form.title.trim(),
-    startTime: form.date ? form.startTime || null : null,
-    endTime: form.date ? form.endTime || null : null,
+    startTime: form.date && !form.isBackup ? form.startTime || null : null,
+    endTime: form.date && !form.isBackup ? form.endTime || null : null,
     cost: form.cost === '' ? null : Number(form.cost),
     arriveCost: form.arriveCost === '' ? null : Number(form.arriveCost),
   });

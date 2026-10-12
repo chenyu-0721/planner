@@ -43,6 +43,13 @@
       "when": 1791821220248,
       "tag": "0005_custom_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791821491948,
+      "tag": "0006_backups",
+      "breakpoints": true
     }
   ]
 }

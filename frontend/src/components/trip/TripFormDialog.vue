@@ -19,7 +19,7 @@
         </div>
       </div>
       <p v-if="trip && shrinking" class="text-xs text-[#986f0b] bg-[#fff8e5] rounded px-2.5 py-1.5">
-        縮短日期後，超出範圍的地點會移到「未排入日期」，不會被刪除。
+        縮短日期後，超出範圍的地點會移到「備選清單」，不會被刪除。
       </p>
       <div>
         <label class="field-label">描述（選用）</label>

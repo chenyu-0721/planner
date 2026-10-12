@@ -42,7 +42,7 @@ const props = defineProps({
   stops: { type: Array, required: true },
   routes: { type: Object, default: () => ({}) }, // { [date]: { coords, legs } }
   routing: { type: Boolean, default: false },
-  selectedDate: { type: String, default: null }, // null = 全部、'unscheduled' = 未排入
+  selectedDate: { type: String, default: null }, // null = 全部、'unscheduled' = 備選
   focusStopId: { type: Number, default: null },
 });
 const emit = defineEmits(['select', 'move']);
@@ -62,9 +62,9 @@ const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[ch]));
 
-function pinIcon(stop, label, color) {
+function pinIcon(stop, label, color, backup = false) {
   return L.divIcon({
-    className: 'trip-pin-wrap',
+    className: backup ? 'trip-pin-wrap trip-pin-backup' : 'trip-pin-wrap',
     html: `<div class="trip-pin" style="--pin:${color}">
       <span class="trip-pin-num">${label}</span>
       <span class="trip-pin-emoji">${stopCategory(stop).emoji}</span>
@@ -116,21 +116,25 @@ function addLegChip(from, to, leg, color) {
   marker.addTo(layer);
 }
 
-// 依目前篩選，整理出要顯示的每日路線
+// 依目前篩選，整理出要顯示的每日路線與備選（備選以虛線圖標顯示，不連線）
 function visibleGroups() {
   const groups = [];
-  const showAll = !props.selectedDate;
+  const sel = props.selectedDate;
+  const showBackupsOnly = sel === 'unscheduled';
   for (const day of props.days) {
-    if (!showAll && props.selectedDate !== day.date) continue;
-    const list = props.stops.filter((s) => s.date === day.date).sort(byStopOrder);
-    groups.push({
-      key: day.date, color: day.color, label: day.title, stops: list, numbered: true, route: props.routes[day.date],
-    });
+    if (sel && !showBackupsOnly && sel !== day.date) continue;
+    const ofDay = props.stops.filter((s) => s.date === day.date).sort(byStopOrder);
+    if (!showBackupsOnly) {
+      groups.push({
+        key: day.date, color: day.color, label: day.title, stops: ofDay.filter((s) => !s.isBackup), numbered: true, route: props.routes[day.date],
+      });
+    }
+    const backups = ofDay.filter((s) => s.isBackup);
+    if (backups.length) groups.push({ key: `${day.date}-backup`, color: day.color, label: `${day.title}備選`, stops: backups, numbered: false, backup: true });
   }
-  if (showAll || props.selectedDate === 'unscheduled') {
-    const list = props.stops.filter((s) => !s.date).sort(byStopOrder);
-    groups.push({ key: 'unscheduled', color: UNSCHEDULED_COLOR, label: '未排入日期', stops: list, numbered: false });
-  }
+  // 未定日期的備選：看某一天時也顯示，方便找附近替代的地點
+  const undated = props.stops.filter((s) => !s.date).sort(byStopOrder);
+  if (undated.length) groups.push({ key: 'backup', color: UNSCHEDULED_COLOR, label: '備選（未定日期）', stops: undated, numbered: false, backup: true });
   return groups;
 }
 
@@ -160,10 +164,11 @@ function render() {
   for (const g of groups) {
     g.stops.forEach((s, i) => {
       const marker = L.marker([s.lat, s.lng], {
-        icon: pinIcon(s, g.numbered ? i + 1 : '·', g.color),
+        icon: pinIcon(s, g.numbered ? i + 1 : '備', g.color, g.backup),
         draggable: true,
         autoPan: true,
         riseOnHover: true,
+        zIndexOffset: g.backup ? -1000 : 0, // 備選壓在行程地點下面
       });
       const time = s.startTime ? `${s.startTime}${s.endTime ? `–${s.endTime}` : ''}　` : '';
       marker.bindTooltip(`<b>${escapeHtml(s.title)}</b><br><span style="color:#616161">${escapeHtml(g.label)}　${time}</span>`, { direction: 'top' });
@@ -180,7 +185,10 @@ function render() {
 
 function fit(animate = true) {
   if (!map) return;
-  const pts = visibleGroups().flatMap((g) => g.stops.map((s) => [s.lat, s.lng]));
+  // 以行程中的地點為主；只有備選時才縮放到備選
+  const groups = visibleGroups();
+  const planned = groups.filter((g) => !g.backup).flatMap((g) => g.stops.map((s) => [s.lat, s.lng]));
+  const pts = planned.length ? planned : groups.flatMap((g) => g.stops.map((s) => [s.lat, s.lng]));
   if (!pts.length) map.setView(TAIWAN_CENTER, MIN_ZOOM, { animate });
   else if (pts.length === 1) map.setView(pts[0], 15, { animate });
   else map.fitBounds(pts, { padding: [56, 56], maxZoom: 16, animate });

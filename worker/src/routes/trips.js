@@ -102,6 +102,7 @@ function stopFields(trip, b, partial) {
     patch.arriveMode = b.arriveMode || null;
   }
   if (has('sortOrder')) patch.sortOrder = Number(b.sortOrder) || 0;
+  if (has('isBackup')) patch.isBackup = !!b.isBackup;
   return patch;
 }
 
@@ -285,8 +286,8 @@ router.put('/:id/stops/:stopId', async (c) => {
   return c.json(stopJson(stop));
 });
 
-// 一次更新多個地點的時間 / 順序 / 交通方式（自動排時間、最佳順序），D1 一次往返
-const BULK_FIELDS = ['startTime', 'endTime', 'sortOrder', 'arriveMode', 'arriveCost'];
+// 一次更新多個地點的日期 / 時間 / 順序 / 交通方式 / 備選（自動排時間、最佳順序、替換備選），D1 一次往返
+const BULK_FIELDS = ['date', 'startTime', 'endTime', 'sortOrder', 'arriveMode', 'arriveCost', 'isBackup'];
 router.patch('/:id/stops', async (c) => {
   const trip = await assertTripAccess(c, c.req.param('id'));
   const { updates } = await c.req.json();

@@ -182,6 +182,20 @@ body {
   justify-content: center;
   font-size: 12px;
 }
+/* 備選：白底虛線、半透明，跟行程中的地點區分 */
+.trip-pin-backup .trip-pin {
+  width: 28px;
+  height: 28px;
+  background: #fff;
+  color: var(--pin);
+  border: 2px dashed var(--pin);
+  opacity: 0.8;
+  font-size: 11px;
+}
+.trip-pin-backup .trip-pin::after {
+  bottom: -8px;
+  border-top-color: var(--pin);
+}
 .leaflet-container {
   font-family: inherit;
 }

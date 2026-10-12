@@ -100,13 +100,16 @@
           <div v-if="searching" class="text-xs text-ink-3 px-1">搜尋中…</div>
           <div v-else-if="results" class="rounded border border-line bg-white max-h-64 overflow-y-auto thin-scroll">
             <div class="flex items-start justify-between gap-2 px-3 py-2 text-xs leading-4 text-ink-3 border-b border-line">
-              <span class="min-w-0">{{ results.length ? (searchNote || '點選地點加入行程') : (searchNote || '找不到符合的地點') }}</span>
+              <span class="min-w-0">{{ results.length ? (searchNote || '點選地點加入行程，或按「＋備選」先放著') : (searchNote || '找不到符合的地點') }}</span>
               <button class="hover:text-ink cursor-pointer shrink-0" @click="results = null"><Icon name="x" :size="13" /></button>
             </div>
-            <button v-for="(r, i) in results" :key="i" class="w-full text-left px-3 py-2 hover:bg-hover cursor-pointer border-b border-line last:border-0" @click="openNewStop(r)">
-              <div class="text-sm font-semibold truncate">{{ r.title }}</div>
-              <div class="text-xs text-ink-3 line-clamp-2">{{ r.address }}</div>
-            </button>
+            <div v-for="(r, i) in results" :key="i" class="flex items-stretch border-b border-line last:border-0">
+              <button class="flex-1 min-w-0 text-left px-3 py-2 hover:bg-hover cursor-pointer" @click="openNewStop(r)">
+                <div class="text-sm font-semibold truncate">{{ r.title }}</div>
+                <div class="text-xs text-ink-3 line-clamp-2">{{ r.address }}</div>
+              </button>
+              <button class="shrink-0 px-3 text-xs text-accent border-l border-line hover:bg-hover cursor-pointer" title="先放到備選，之後再決定要不要去" @click="openNewStop(r, true)">＋備選</button>
+            </div>
             <div v-if="!results.length && !isGoogleMapsUrl(query)" class="px-3 py-2 border-t border-line">
               <a :href="googleMapsSearchUrl" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-sm text-accent hover:underline">
                 在 Google 地圖搜尋「{{ query.trim() }}」<Icon name="external" :size="12" />
@@ -135,7 +138,7 @@
           <button v-for="d in days" :key="d.date" class="chip" :class="selectedDate === d.date ? 'chip-on' : ''" @click="selectedDate = d.date">
             <span class="size-2 rounded-full" :style="{ background: d.color }"></span>{{ d.title }}
           </button>
-          <button v-if="unscheduled.length" class="chip" :class="selectedDate === 'unscheduled' ? 'chip-on' : ''" @click="selectedDate = 'unscheduled'">未排入</button>
+          <button v-if="allBackups.length" class="chip" :class="selectedDate === 'unscheduled' ? 'chip-on' : ''" title="所有備選地點" @click="selectedDate = 'unscheduled'">🔖 備選 {{ allBackups.length }}</button>
         </div>
 
         <!-- 每日行程 -->
@@ -143,13 +146,13 @@
           <section v-for="g in visibleGroups" :key="g.key">
             <header class="flex items-center gap-2 mb-2">
               <span class="w-1 h-5 rounded" :style="{ background: g.color }"></span>
-              <h3 class="font-semibold text-sm">{{ g.title }}</h3>
-              <span class="text-xs text-ink-3">{{ g.subtitle }}</span>
+              <h3 class="font-semibold text-sm whitespace-nowrap shrink-0">{{ g.title }}</h3>
+              <span class="text-xs text-ink-3 truncate min-w-0">{{ g.subtitle }}</span>
               <div class="flex-1"></div>
-              <span v-if="g.distance" class="text-xs text-ink-3 flex items-center gap-1">
+              <span v-if="g.distance" class="text-xs text-ink-3 flex items-center gap-1 whitespace-nowrap shrink-0">
                 <Icon name="route" :size="12" />{{ fmtDistance(g.distance) }}<template v-if="g.duration">・{{ g.legs?.some((l) => l.estimated) ? '約 ' : '' }}{{ fmtDuration(g.duration) }}</template>
               </span>
-              <span v-if="g.cost" class="text-xs text-ink-3">{{ fmtCost(g.cost) }}</span>
+              <span v-if="g.cost" class="text-xs text-ink-3 whitespace-nowrap shrink-0">{{ fmtCost(g.cost) }}</span>
               <a
                 v-if="g.numbered && g.stops.length"
                 :href="googleDirectionsUrl(g.stops, trip.travelMode)"
@@ -197,34 +200,30 @@
             >
               <template #item="{ element: s, index }">
                 <div>
-                  <div
-                    class="group flex items-start gap-2.5 bg-white rounded-md card-shadow hover:card-shadow-hover px-2.5 py-2 cursor-pointer"
-                    :class="focusStopId === s.id ? 'ring-2 ring-accent' : ''"
-                    @click="focusStop(s)"
-                    @dblclick="editStop(s)"
+                  <StopCard
+                    :stop="s"
+                    :label="g.numbered ? index + 1 : '備'"
+                    :color="g.numbered ? g.color : backupColor(s)"
+                    :backup="!g.numbered"
+                    :tag="!g.numbered && s.date ? `${dayTitle(s.date)}備選` : ''"
+                    :focused="focusStopId === s.id"
+                    :weather="g.numbered ? stopWeather(s) : null"
+                    @focus="focusStop(s)"
+                    @edit="editStop(s)"
                   >
-                    <span class="mt-0.5 size-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0" :style="{ background: g.color }">
-                      {{ g.numbered ? index + 1 : '·' }}
-                    </span>
-                    <div class="min-w-0 flex-1">
-                      <div class="flex items-center gap-1.5">
-                        <span class="text-sm">{{ stopCategory(s).emoji }}</span>
-                        <span class="text-sm font-semibold truncate">{{ s.title }}</span>
+                    <template #menu>
+                      <button class="menu-item" @click="editStop(s)"><Icon name="pencil" />編輯</button>
+                      <template v-if="g.numbered">
+                        <button class="menu-item" @click="backupTarget = s"><Icon name="move" />沒開？換成備選…</button>
+                        <button class="menu-item" @click="moveToBackup(s)"><Icon name="tag" />移到這天的備選</button>
+                      </template>
+                      <div v-else class="max-h-64 overflow-y-auto thin-scroll">
+                        <button v-for="d in days" :key="d.date" class="menu-item" @click="scheduleBackup(s, d.date)"><Icon name="calendar" />排入{{ d.title }}（{{ d.subtitle }}）</button>
                       </div>
-                      <div class="text-xs text-ink-3 flex flex-wrap gap-x-2">
-                        <span v-if="s.startTime" class="flex items-center gap-0.5"><Icon name="clock" :size="11" />{{ s.startTime }}<template v-if="s.endTime">–{{ s.endTime }}</template></span>
-                        <span v-if="stopWeather(s)" class="tabular-nums" :title="`${s.startTime} 天氣：${weatherInfo(stopWeather(s).code).label}`">
-                          {{ weatherInfo(stopWeather(s).code).emoji }} {{ fmtTemp(stopWeather(s).temp) }}<span v-if="stopWeather(s).rain >= 20" :class="stopWeather(s).rain >= 50 ? 'text-accent font-semibold' : ''"> ☔{{ stopWeather(s).rain }}%</span>
-                        </span>
-                        <span v-if="s.cost != null">{{ fmtCost(s.cost) }}</span>
-                        <span v-if="s.address" class="truncate max-w-full">{{ s.address }}</span>
-                      </div>
-                      <p v-if="s.notes" class="text-xs text-ink-2 mt-0.5 line-clamp-2 whitespace-pre-line">{{ s.notes }}</p>
-                    </div>
-                    <button class="icon-btn !size-7 touch-show opacity-0 group-hover:opacity-100 shrink-0" title="編輯" @click.stop="editStop(s)">
-                      <Icon name="pencil" :size="14" />
-                    </button>
-                  </div>
+                      <div class="border-t border-line my-1"></div>
+                      <button class="menu-item !text-[#c50f1f]" @click="deleteStop(s)"><Icon name="trash" />刪除</button>
+                    </template>
+                  </StopCard>
                   <div v-if="g.numbered && index < g.stops.length - 1" class="no-drag flex items-stretch gap-2 py-1.5 pl-[21px]">
                     <span class="w-px shrink-0" :style="{ background: g.color }"></span>
                     <Popover close-on-click block class="min-w-0 flex-1">
@@ -290,7 +289,49 @@
               </template>
             </draggable>
             <div v-if="!g.stops.length" class="text-xs text-ink-4 px-1 -mt-8 mb-2 h-8 flex items-center pointer-events-none">
-              {{ g.numbered ? '拖曳地點到這裡，或搜尋新增' : '沒有未排入日期的地點' }}
+              {{ g.numbered ? '拖曳地點到這裡，或搜尋新增' : '還沒有備選。搜尋時按「＋備選」，或拖曳地點到這裡' }}
+            </div>
+
+            <!-- 這天的備選：不排序號、不連線、不計入時間與預算 -->
+            <div v-if="g.numbered && g.backups.length" class="mt-2">
+              <button type="button" class="flex items-center gap-1 h-6 px-1 text-xs text-ink-3 hover:text-ink cursor-pointer" @click="collapsedBackups[g.date] = !collapsedBackups[g.date]">
+                <Icon name="chevron-down" :size="12" class="transition-transform" :class="collapsedBackups[g.date] ? '-rotate-90' : ''" />
+                🔖 這天的備選（{{ g.backups.length }}）
+              </button>
+              <draggable
+                v-show="!collapsedBackups[g.date]"
+                :model-value="g.backups"
+                item-key="id"
+                group="stops"
+                class="space-y-1 mt-1 min-h-6"
+                ghost-class="drag-ghost"
+                :animation="150"
+                :delay="250"
+                :delay-on-touch-only="true"
+                :force-fallback="true"
+                :fallback-on-body="true"
+                fallback-class="drag-fallback"
+                filter=".no-drag"
+                :prevent-on-filter="false"
+                @change="(e) => onBackupDragChange(e, g)"
+              >
+                <template #item="{ element: s }">
+                  <div>
+                    <StopCard :stop="s" label="備" :color="g.color" backup :focused="focusStopId === s.id" @focus="focusStop(s)" @edit="editStop(s)">
+                      <template #action>
+                        <button class="no-drag shrink-0 self-center h-7 px-2 rounded text-xs text-accent hover:bg-hover cursor-pointer" title="排入這天的行程（加在最後）" @click.stop="scheduleBackup(s, g.date)">排入</button>
+                      </template>
+                      <template #menu>
+                        <button class="menu-item" @click="editStop(s)"><Icon name="pencil" />編輯</button>
+                        <button class="menu-item" @click="scheduleBackup(s, g.date)"><Icon name="calendar" />排入{{ g.title }}</button>
+                        <button class="menu-item" @click="patchStop(s, { date: null })"><Icon name="tag" />改為未定日期的備選</button>
+                        <div class="border-t border-line my-1"></div>
+                        <button class="menu-item !text-[#c50f1f]" @click="deleteStop(s)"><Icon name="trash" />刪除</button>
+                      </template>
+                    </StopCard>
+                  </div>
+                </template>
+              </draggable>
             </div>
           </section>
         </div>
@@ -314,6 +355,15 @@
 
     <StopEditor v-model="editing" :days="days" :saving="saving" @save="saveStop" @delete="deleteStop" />
     <TripFormDialog v-model="settingsOpen" :trip="trip" @saved="onTripSaved" />
+    <BackupPickerDialog
+      :target="backupTarget"
+      :backups="allBackups"
+      :days="days"
+      :saving="bulkSaving"
+      @close="backupTarget = null"
+      @replace="replaceWithBackup"
+      @insert="insertBackupAfter"
+    />
     <BudgetDialog
       v-model="budgetOpen"
       :trip="trip"
@@ -342,7 +392,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import draggable from 'vuedraggable';
 import Icon from '@/components/Icon.vue';
@@ -353,13 +403,15 @@ import TripMap from '@/components/trip/TripMap.vue';
 import StopEditor from '@/components/trip/StopEditor.vue';
 import TripFormDialog from '@/components/trip/TripFormDialog.vue';
 import BudgetDialog from '@/components/trip/BudgetDialog.vue';
+import StopCard from '@/components/trip/StopCard.vue';
+import BackupPickerDialog from '@/components/trip/BackupPickerDialog.vue';
 import AutoScheduleDialog from '@/components/trip/AutoScheduleDialog.vue';
 import OptimizeOrderDialog from '@/components/trip/OptimizeOrderDialog.vue';
 import api from '@/api';
 import { sortOrderAt } from '@/utils/planner';
 import {
   tripDays, fmtTripRange, stopCategory, setCustomCategories, distanceKm, fmtDistance, fmtCost, byStopOrder,
-  sortOrderForTime, searchPlaces, stopTotal, UNSCHEDULED_COLOR, inTaiwan,
+  sortOrderForTime, searchPlaces, stopTotal, isBackup, isPlanned, UNSCHEDULED_COLOR, inTaiwan,
   parseCoordinates, isGoogleMapsUrl, isShortGoogleUrl, placeFromGoogleUrl,
   TRAVEL_MODES, DEFAULT_TRAVEL_MODES, travelModeInfo, planDayRoute, upgradeRailLegs, fmtDuration, googleDirectionsUrl, googleSegmentUrl,
 } from '@/utils/trip';
@@ -398,14 +450,19 @@ const routing = ref(false);
 const mobileTabs = [{ key: 'list', label: '行程', icon: 'list' }, { key: 'map', label: '地圖', icon: 'map' }];
 
 const days = computed(() => tripDays(trip.value));
-const unscheduled = computed(() => stops.value.filter((s) => !s.date).sort(byStopOrder));
-const totalCost = computed(() => stops.value.reduce((sum, s) => sum + stopTotal(s), 0));
+// 備選：未定日期的放在「備選清單」，有日期的顯示在那天下方
+const allBackups = computed(() => stops.value.filter(isBackup).sort((a, b) => (a.date || '').localeCompare(b.date || '') || byStopOrder(a, b)));
+const undatedBackups = computed(() => allBackups.value.filter((s) => !s.date));
+const collapsedBackups = reactive({});
+const dayTitle = (date) => days.value.find((d) => d.date === date)?.title || date;
+const backupColor = (s) => days.value.find((d) => d.date === s.date)?.color || UNSCHEDULED_COLOR;
+const totalCost = computed(() => stops.value.filter(isPlanned).reduce((sum, s) => sum + stopTotal(s), 0)); // 備選不計入
 const overBudget = computed(() => !!trip.value?.budget && totalCost.value > trip.value.budget);
 const budgetOpen = ref(false);
 
 const groups = computed(() => {
   const list = days.value.map((d) => {
-    const dayStops = stops.value.filter((s) => s.date === d.date).sort(byStopOrder);
+    const dayStops = stops.value.filter((s) => s.date === d.date && !s.isBackup).sort(byStopOrder);
     // 路線是依哪個順序算的；順序剛改、還沒重算完時先不用舊的路段
     const saved = routes.value[d.date];
     const route = saved?.ids === dayStops.map((s) => s.id).join(',') ? saved : null;
@@ -418,6 +475,7 @@ const groups = computed(() => {
       color: d.color,
       numbered: true,
       stops: dayStops,
+      backups: stops.value.filter((s) => s.date === d.date && s.isBackup).sort(byStopOrder),
       cost: dayStops.reduce((sum, s) => sum + stopTotal(s), 0),
       legs: route?.legs,
       distance: route ? route.legs.reduce((sum, l) => sum + l.distance, 0) : straight,
@@ -425,7 +483,16 @@ const groups = computed(() => {
     };
   });
   list.push({
-    key: 'unscheduled', date: null, title: '未排入日期', subtitle: '', color: UNSCHEDULED_COLOR, numbered: false, stops: unscheduled.value, cost: 0, distance: 0,
+    key: 'unscheduled',
+    date: null,
+    title: '🔖 備選清單',
+    subtitle: selectedDate.value === 'unscheduled' ? '全部備選' : '未定日期',
+    color: UNSCHEDULED_COLOR,
+    numbered: false,
+    stops: selectedDate.value === 'unscheduled' ? allBackups.value : undatedBackups.value,
+    backups: [],
+    cost: 0,
+    distance: 0,
   });
   return list;
 });
@@ -554,7 +621,7 @@ async function computeRoutes() {
   routing.value = true;
   try {
     await Promise.all(days.value.map(async (d) => {
-      const dayStops = stops.value.filter((s) => s.date === d.date).sort(byStopOrder);
+      const dayStops = stops.value.filter((s) => s.date === d.date && !s.isBackup).sort(byStopOrder);
       if (dayStops.length < 2) return;
       try {
         const route = await planDayRoute(dayStops, mode);
@@ -586,7 +653,7 @@ async function computeRoutes() {
 // 地點、順序或交通方式改變時重新規劃（只看會影響路線的欄位）
 const routeKey = computed(() => (trip.value ? [
   trip.value.travelMode,
-  ...stops.value.filter((s) => s.date).sort(byStopOrder).map((s) => `${s.date}:${s.lat},${s.lng}:${s.arriveMode || ''}`),
+  ...stops.value.filter(isPlanned).sort(byStopOrder).map((s) => `${s.date}:${s.lat},${s.lng}:${s.arriveMode || ''}`),
 ].join('|') : ''));
 watch(routeKey, () => {
   clearTimeout(routeTimer);
@@ -602,7 +669,7 @@ const centerOf = (list) => ({
 });
 // 每天以當天地點的中心查詢；沒有地點的日子用整個行程的中心
 const dayCenters = computed(() => {
-  const dated = stops.value.filter((s) => s.date);
+  const dated = stops.value.filter(isPlanned);
   const tripCenter = dated.length ? centerOf(dated) : null;
   const map = {};
   for (const d of days.value) {
@@ -687,16 +754,25 @@ async function setTravelMode(mode) {
 
 const defaultDate = () => (selectedDate.value && selectedDate.value !== 'unscheduled' ? selectedDate.value : days.value[0]?.date ?? null);
 
-function openNewStop(place) {
+function openNewStop(place, asBackup = false) {
   results.value = null;
   query.value = '';
+  const day = selectedDate.value && selectedDate.value !== 'unscheduled' ? selectedDate.value : null;
   editing.value = {
-    title: place.title, address: place.address, lat: place.lat, lng: place.lng, category: 'sight', date: defaultDate(),
+    title: place.title,
+    address: place.address,
+    lat: place.lat,
+    lng: place.lng,
+    category: 'sight',
+    date: asBackup ? day : defaultDate(),
+    isBackup: asBackup,
   };
 }
 
 /* ---- 編輯 / 儲存地點 ---- */
-const dayStopsOf = (date) => stops.value.filter((s) => s.date === date);
+const dayStopsOf = (date) => stops.value.filter((s) => s.date === date && !s.isBackup);
+// 某天最後面的 sortOrder（排入時加在最後）
+const endOfDay = (date, exceptId) => Math.max(0, ...stops.value.filter((s) => s.date === date && s.id !== exceptId).map((s) => s.sortOrder)) + 1;
 
 function editStop(s, focus) {
   editing.value = { ...s, focus };
@@ -708,6 +784,7 @@ async function saveStop(form) {
     title: form.title,
     category: form.category,
     customCategoryId: form.customCategoryId,
+    isBackup: form.isBackup,
     date: form.date,
     startTime: form.startTime,
     endTime: form.endTime,
@@ -719,13 +796,12 @@ async function saveStop(form) {
     lng: form.lng,
   };
   // 依時間排序；換到別天且沒有時間時放到該天最後
-  const dateChanged = !original || original.date !== form.date;
+  const dateChanged = !original || original.date !== form.date || !!original.isBackup !== !!form.isBackup;
   const timeChanged = !original || original.startTime !== form.startTime;
-  if (form.date && form.startTime && (dateChanged || timeChanged)) {
+  if (form.date && !form.isBackup && form.startTime && (dateChanged || timeChanged)) {
     payload.sortOrder = sortOrderForTime(dayStopsOf(form.date), { id: form.id ?? -1, sortOrder: Infinity }, form.startTime);
   } else if (dateChanged) {
-    const max = Math.max(0, ...stops.value.filter((s) => s.date === form.date && s.id !== form.id).map((s) => s.sortOrder));
-    payload.sortOrder = max + 1;
+    payload.sortOrder = endOfDay(form.date, form.id);
   }
 
   saving.value = true;
@@ -738,7 +814,7 @@ async function saveStop(form) {
     results.value = null;
     query.value = '';
     focusStopId.value = stop.id;
-    if (!form.id) ui.toast(`已將「${stop.title}」加入行程`, 'success');
+    if (!form.id) ui.toast(stop.isBackup || !stop.date ? `已將「${stop.title}」放到備選` : `已將「${stop.title}」加入行程`, 'success');
   } catch (e) {
     ui.error(e);
   } finally {
@@ -769,13 +845,69 @@ async function patchStop(s, patch) {
   }
 }
 
-// 拖曳排序 / 換天
+// 拖曳排序 / 換天 / 拖進或拖出備選
 function onDragChange(e, g) {
   const evt = e.added || e.moved;
   if (!evt) return;
   const s = evt.element;
   const list = g.stops.filter((x) => x.id !== s.id);
-  patchStop(s, { date: g.date, sortOrder: sortOrderAt(list, evt.newIndex) });
+  const sortOrder = sortOrderAt(list, evt.newIndex);
+  if (g.date) patchStop(s, { date: g.date, isBackup: false, sortOrder });
+  // 備選清單：拖進來變成未定日期；在「全部備選」裡調整順序時保留原本的日期
+  else patchStop(s, e.added ? { date: null, isBackup: false, sortOrder } : { sortOrder });
+}
+function onBackupDragChange(e, g) {
+  const evt = e.added || e.moved;
+  if (!evt) return;
+  const s = evt.element;
+  const list = g.backups.filter((x) => x.id !== s.id);
+  patchStop(s, { date: g.date, isBackup: true, sortOrder: sortOrderAt(list, evt.newIndex) });
+}
+
+/* ---- 備選 ---- */
+const backupTarget = ref(null);
+
+function moveToBackup(s) {
+  patchStop(s, { isBackup: true });
+  ui.toast(`「${s.title}」已移到${dayTitle(s.date)}的備選`, 'success');
+}
+
+function scheduleBackup(s, date) {
+  patchStop(s, { date, isBackup: false, sortOrder: endOfDay(date, s.id) });
+}
+
+// 用備選取代原本的地點：接手它的位置、時間與交通方式，原本的地點移到這天的備選
+async function replaceWithBackup(b) {
+  const t = backupTarget.value;
+  backupTarget.value = null;
+  const ok = await bulkUpdate([
+    {
+      id: b.id,
+      date: t.date,
+      isBackup: false,
+      sortOrder: t.sortOrder,
+      startTime: t.startTime || null,
+      endTime: t.endTime || null,
+      arriveMode: t.arriveMode || null,
+      arriveCost: null,
+    },
+    { id: t.id, isBackup: true },
+  ]);
+  if (ok) {
+    ui.toast(`已換成「${b.title}」，「${t.title}」移到備選`, 'success');
+    focusStop(b);
+  }
+}
+
+async function insertBackupAfter(b) {
+  const t = backupTarget.value;
+  backupTarget.value = null;
+  const list = dayStopsOf(t.date).sort(byStopOrder);
+  const sortOrder = sortOrderAt(list, list.findIndex((x) => x.id === t.id) + 1);
+  if (await bulkUpdate([{ id: b.id, date: t.date, isBackup: false, sortOrder }])) {
+    ui.toast(`已將「${b.title}」加在「${t.title}」後面`, 'success');
+    focusStop(b);
+  }
 }
 
 /* ---- 自動排時間 / 最佳順序 ---- */

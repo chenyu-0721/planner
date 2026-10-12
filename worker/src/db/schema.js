@@ -216,7 +216,7 @@ export const stopCategories = sqliteTable('stop_categories', {
   oneOf('stop_categories_base', t.baseCategory, STOP_CATEGORIES),
 ]);
 
-// 行程中的地點；date 為空代表「尚未排入日期」
+// 行程中的地點；date 為空代表「備選（未定日期）」
 export const tripStops = sqliteTable('trip_stops', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   tripId: integer('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
@@ -231,6 +231,7 @@ export const tripStops = sqliteTable('trip_stops', {
   notes: text('notes'),
   cost: real('cost'),
   arriveMode: text('arrive_mode'), // 從前一個地點到這裡的交通方式；空值 = 使用行程預設（由 API 檢查可用值）
+  isBackup: integer('is_backup', { mode: 'boolean' }).notNull().default(false), // 備選：有日期 = 這天的備選；沒日期的地點一律視為備選
   customCategoryId: integer('custom_category_id').references(() => stopCategories.id, { onDelete: 'set null' }), // 自訂圖標；空值 = 使用 category 的內建圖標
   arriveCost: real('arrive_cost'), // 從前一個地點到這裡的交通費（例如高鐵票），計入「交通」預算
   sortOrder: real('sort_order').notNull().default(0),

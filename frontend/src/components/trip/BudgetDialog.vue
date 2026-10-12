@@ -89,6 +89,7 @@
           </div>
         </section>
       </template>
+      <p v-if="budget.backup" class="text-xs text-ink-4">備選地點的花費（{{ fmtCost(budget.backup) }}）不計入總額。</p>
     </div>
   </Modal>
 </template>
@@ -97,7 +98,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import Modal from '@/components/Modal.vue';
 import Icon from '@/components/Icon.vue';
-import { computeBudget, fmtCost, UNSCHEDULED_COLOR } from '@/utils/trip';
+import { computeBudget, fmtCost } from '@/utils/trip';
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -112,10 +113,7 @@ const emit = defineEmits(['update:modelValue', 'save-budget', 'edit']);
 const budget = computed(() => computeBudget(props.stops, props.days));
 const limit = computed(() => props.trip.budget || 0);
 const over = computed(() => limit.value > 0 && budget.value.total > limit.value);
-const dayRows = computed(() => [
-  ...budget.value.days,
-  ...(budget.value.unscheduled ? [{ date: null, title: '未排入日期', subtitle: '', color: UNSCHEDULED_COLOR, amount: budget.value.unscheduled }] : []),
-]);
+const dayRows = computed(() => budget.value.days);
 const pct = (v) => (budget.value.total ? `${Math.round((v / budget.value.total) * 100)}%` : '0%');
 
 const open = reactive({});

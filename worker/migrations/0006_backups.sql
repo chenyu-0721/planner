@@ -1,0 +1,1 @@
+ALTER TABLE `trip_stops` ADD `is_backup` integer DEFAULT false NOT NULL;

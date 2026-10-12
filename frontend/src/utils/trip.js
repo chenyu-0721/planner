@@ -58,6 +58,10 @@ export function fmtTripRange(trip) {
 
 export const byStopOrder = (a, b) => a.sortOrder - b.sortOrder || a.id - b.id;
 
+// 備選：沒有日期（備選清單），或標記為某天的備選。備選不排序號、不連線、不計入時間與預算
+export const isBackup = (s) => !s.date || !!s.isBackup;
+export const isPlanned = (s) => !!s.date && !s.isBackup;
+
 // 兩點直線距離（公里）
 export function distanceKm(a, b) {
   const R = 6371;
@@ -648,20 +652,20 @@ export const budgetGroupOf = (category) => BUDGET_GROUPS.find((g) => g.categorie
 export const stopTotal = (s) => (s.cost || 0) + (s.arriveCost || 0);
 
 /**
- * 依類別與日期加總
- * @returns {{ total, groups: { ...group, amount, items: { id, label, sub, amount, fare? }[] }[], days: { date, title, subtitle, color, amount }[], unscheduled: number }}
+ * 依類別與日期加總（只算已排入行程的地點；備選另外加總，不算進總額）
+ * @returns {{ total, groups: { ...group, amount, items: { id, label, sub, amount, fare? }[] }[], days: { date, title, subtitle, color, amount }[], backup: number }}
  */
 export function computeBudget(stops, days) {
   const groups = BUDGET_GROUPS.map((g) => ({ ...g, amount: 0, items: [] }));
   const byKey = Object.fromEntries(groups.map((g) => [g.key, g]));
   const dayList = days.map((d) => ({ date: d.date, title: d.title, subtitle: d.subtitle, color: d.color, amount: 0 }));
   const dayOf = Object.fromEntries(dayList.map((d) => [d.date, d]));
-  let unscheduled = 0;
+  const backup = stops.filter(isBackup).reduce((sum, s) => sum + stopTotal(s), 0);
 
-  const ordered = [...stops].sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999') || byStopOrder(a, b));
+  const ordered = stops.filter(isPlanned).sort((a, b) => a.date.localeCompare(b.date) || byStopOrder(a, b));
   ordered.forEach((s, i) => {
-    const day = s.date ? dayOf[s.date] : null;
-    const when = day ? `${day.title}` : '未排入日期';
+    const day = dayOf[s.date];
+    const when = day ? day.title : s.date;
     if (s.cost) {
       const g = byKey[budgetGroupOf(s.category).key];
       g.amount += s.cost;
@@ -680,12 +684,10 @@ export function computeBudget(stops, days) {
         fare: true,
       });
     }
-    const amount = stopTotal(s);
-    if (day) day.amount += amount;
-    else unscheduled += amount;
+    if (day) day.amount += stopTotal(s);
   });
   groups.forEach((g) => g.items.sort((a, b) => b.amount - a.amount));
   return {
-    total: groups.reduce((sum, g) => sum + g.amount, 0), groups, days: dayList, unscheduled,
+    total: groups.reduce((sum, g) => sum + g.amount, 0), groups, days: dayList, backup,
   };
 }
