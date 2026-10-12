@@ -31,7 +31,7 @@
         </ol>
 
         <ul v-if="saved > 0 && (resetModes.length || hasTimes)" class="text-xs text-ink-3 leading-5 list-disc pl-4">
-          <li v-if="resetModes.length">前後站改變的 {{ resetModes.length }} 段，交通方式會改回預設。</li>
+          <li v-if="resetModes.length">前後站改變的 {{ resetModes.length }} 段，交通方式會改回預設、交通費會清除。</li>
           <li v-if="hasTimes">這天已經排了時間，套用後會開啟「自動排時間」重新計算。</li>
         </ul>
       </template>
@@ -101,9 +101,9 @@ const saved = computed(() => (result.value && result.value.before - result.value
 const ordered = computed(() => (result.value ? result.value.order.map((i) => props.group.stops[i]) : props.group?.stops || []));
 const moved = (s, i) => props.group.stops[i]?.id !== s.id;
 const hasTimes = computed(() => props.group?.stops.some((s) => s.startTime));
-// 前一站換了的地點，原本指定的交通方式（例如高鐵）就不再適用
+// 前一站換了的地點，原本指定的交通方式（例如高鐵）與交通費就不再適用
 const resetModes = computed(() => ordered.value.filter((s, i) => {
-  if (i === 0 || !s.arriveMode) return false;
+  if (i === 0 || !(s.arriveMode || s.arriveCost)) return false;
   const oldIndex = props.group.stops.indexOf(s);
   return props.group.stops[oldIndex - 1]?.id !== ordered.value[i - 1].id;
 }));
@@ -120,7 +120,8 @@ function apply() {
   const updates = ordered.value.map((s, i) => ({
     id: s.id,
     sortOrder: base + i,
-    ...((reset.has(s.id) || (i === 0 && s.arriveMode)) ? { arriveMode: null } : {}),
+    ...(reset.has(s.id) ? { arriveMode: null, arriveCost: null } : {}),
+    ...(i === 0 && s.arriveMode ? { arriveMode: null } : {}),
   }));
   emit('apply', updates, { reschedule: hasTimes.value });
 }

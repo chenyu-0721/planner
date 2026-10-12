@@ -618,3 +618,62 @@ export function bestOrder(matrix, { fixEnd = false } = {}) {
   if (n <= 2 || (fixEnd && n <= 3)) return [...Array(n).keys()];
   return n <= 13 ? exactOrder(matrix, fixEnd) : heuristicOrder(matrix, fixEnd);
 }
+
+/* ---------- 預算 ----------
+ * 地點的「預估花費」依地點類別歸類；路段的「交通費」（記在抵達的地點上）一律算交通
+ */
+export const BUDGET_GROUPS = [
+  { key: 'transport', label: '交通', emoji: '🚆', color: '#0f6cbd', categories: ['transport'] },
+  { key: 'hotel', label: '住宿', emoji: '🏨', color: '#8764b8', categories: ['hotel'] },
+  { key: 'food', label: '餐飲', emoji: '🍜', color: '#ca5010', categories: ['food'] },
+  { key: 'ticket', label: '門票・活動', emoji: '🎟️', color: '#107c10', categories: ['sight', 'activity'] },
+  { key: 'shopping', label: '購物', emoji: '🛍️', color: '#c239b3', categories: ['shopping'] },
+  { key: 'other', label: '其他', emoji: '📌', color: '#8a8886', categories: ['other'] },
+];
+export const budgetGroupOf = (category) => BUDGET_GROUPS.find((g) => g.categories.includes(category)) || BUDGET_GROUPS[BUDGET_GROUPS.length - 1];
+
+/** 某地點的花費合計（地點花費 + 到這裡的交通費） */
+export const stopTotal = (s) => (s.cost || 0) + (s.arriveCost || 0);
+
+/**
+ * 依類別與日期加總
+ * @returns {{ total, groups: { ...group, amount, items: { id, label, sub, amount, fare? }[] }[], days: { date, title, subtitle, color, amount }[], unscheduled: number }}
+ */
+export function computeBudget(stops, days) {
+  const groups = BUDGET_GROUPS.map((g) => ({ ...g, amount: 0, items: [] }));
+  const byKey = Object.fromEntries(groups.map((g) => [g.key, g]));
+  const dayList = days.map((d) => ({ date: d.date, title: d.title, subtitle: d.subtitle, color: d.color, amount: 0 }));
+  const dayOf = Object.fromEntries(dayList.map((d) => [d.date, d]));
+  let unscheduled = 0;
+
+  const ordered = [...stops].sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999') || byStopOrder(a, b));
+  ordered.forEach((s, i) => {
+    const day = s.date ? dayOf[s.date] : null;
+    const when = day ? `${day.title}` : '未排入日期';
+    if (s.cost) {
+      const g = byKey[budgetGroupOf(s.category).key];
+      g.amount += s.cost;
+      g.items.push({ id: s.id, label: `${categoryInfo(s.category).emoji} ${s.title}`, sub: when, amount: s.cost });
+    }
+    if (s.arriveCost) {
+      const prev = ordered[i - 1];
+      const fromLabel = prev?.date && s.date ? prev.title : '上一站'; // 當天第一站接前一天的最後一站
+      const mode = s.arriveMode ? travelModeInfo(s.arriveMode) : null;
+      byKey.transport.amount += s.arriveCost;
+      byKey.transport.items.push({
+        id: s.id,
+        label: `${mode ? mode.emoji : '🧭'} ${fromLabel} → ${s.title}`,
+        sub: `${when}${mode ? `・${mode.label}` : ''}`,
+        amount: s.arriveCost,
+        fare: true,
+      });
+    }
+    const amount = stopTotal(s);
+    if (day) day.amount += amount;
+    else unscheduled += amount;
+  });
+  groups.forEach((g) => g.items.sort((a, b) => b.amount - a.amount));
+  return {
+    total: groups.reduce((sum, g) => sum + g.amount, 0), groups, days: dayList, unscheduled,
+  };
+}

@@ -176,6 +176,7 @@ export const trips = sqliteTable('trips', {
   color: integer('color').notNull().default(0),
   travelMode: text('travel_mode').notNull().default('car'), // 已停用（舊欄位，保留以免重建資料表），改用 route_mode
   routeMode: text('route_mode').notNull().default('car'), // 行程預設交通方式，可用值見 DEFAULT_TRAVEL_MODES（由 API 檢查）
+  budget: real('budget'), // 預算上限（選填，由 API 檢查範圍）
   ownerId: integer('owner_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -215,6 +216,7 @@ export const tripStops = sqliteTable('trip_stops', {
   notes: text('notes'),
   cost: real('cost'),
   arriveMode: text('arrive_mode'), // 從前一個地點到這裡的交通方式；空值 = 使用行程預設（由 API 檢查可用值）
+  arriveCost: real('arrive_cost'), // 從前一個地點到這裡的交通費（例如高鐵票），計入「交通」預算
   sortOrder: real('sort_order').notNull().default(0),
   createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: createdAt(),

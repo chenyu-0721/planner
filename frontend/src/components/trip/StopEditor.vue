@@ -49,17 +49,21 @@
         <input v-model="form.address" class="input" maxlength="200" />
       </div>
 
+      <div class="-mt-2 flex items-center gap-2 text-xs text-ink-3">
+        座標 {{ form.lat?.toFixed(5) }}, {{ form.lng?.toFixed(5) }}
+        <a :href="googlePlaceUrl(form)" target="_blank" rel="noopener" class="text-accent hover:underline whitespace-nowrap">Google 地圖</a>
+      </div>
+
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="field-label">預估花費</label>
           <input v-model="form.cost" type="number" min="0" step="1" class="input" placeholder="0" />
+          <p class="mt-1 text-[11px] leading-4 text-ink-4">計入「{{ budgetGroupOf(form.category).label }}」</p>
         </div>
         <div>
-          <label class="field-label">座標</label>
-          <div class="h-8 flex items-center gap-2 text-xs text-ink-3">
-            {{ form.lat?.toFixed(5) }}, {{ form.lng?.toFixed(5) }}
-            <a :href="googlePlaceUrl(form)" target="_blank" rel="noopener" class="text-accent hover:underline whitespace-nowrap">Google 地圖</a>
-          </div>
+          <label class="field-label">到這裡的交通費</label>
+          <input ref="arriveCostEl" v-model="form.arriveCost" type="number" min="0" step="1" class="input" placeholder="0" />
+          <p class="mt-1 text-[11px] leading-4 text-ink-4">從上一站過來的車票、油錢等，計入「交通」</p>
         </div>
       </div>
 
@@ -83,10 +87,10 @@
 import { nextTick, reactive, ref, watch } from 'vue';
 import Modal from '../Modal.vue';
 import Icon from '../Icon.vue';
-import { CATEGORIES, googlePlaceUrl } from '@/utils/trip';
+import { CATEGORIES, googlePlaceUrl, budgetGroupOf } from '@/utils/trip';
 
 const props = defineProps({
-  modelValue: { type: Object, default: null }, // 編輯中的地點（新增時沒有 id）
+  modelValue: { type: Object, default: null }, // 編輯中的地點（新增時沒有 id）；focus: 'arriveCost' 時開啟後游標放在交通費
   days: { type: Array, required: true },
   saving: { type: Boolean, default: false },
 });
@@ -95,6 +99,7 @@ const emit = defineEmits(['update:modelValue', 'save', 'delete']);
 const form = reactive({});
 const error = ref('');
 const titleEl = ref(null);
+const arriveCostEl = ref(null);
 
 watch(() => props.modelValue, async (v) => {
   if (!v) return;
@@ -108,12 +113,13 @@ watch(() => props.modelValue, async (v) => {
     endTime: v.endTime || '',
     address: v.address || '',
     cost: v.cost ?? '',
+    arriveCost: v.arriveCost ?? '',
     notes: v.notes || '',
     lat: v.lat,
     lng: v.lng,
   });
   await nextTick();
-  titleEl.value?.focus();
+  (v.focus === 'arriveCost' ? arriveCostEl : titleEl).value?.focus();
 });
 
 function save() {
@@ -132,6 +138,7 @@ function save() {
     startTime: form.date ? form.startTime || null : null,
     endTime: form.date ? form.endTime || null : null,
     cost: form.cost === '' ? null : Number(form.cost),
+    arriveCost: form.arriveCost === '' ? null : Number(form.arriveCost),
   });
 }
 </script>

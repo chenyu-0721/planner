@@ -48,6 +48,13 @@ async function assertTripAccess(c, tripId) {
   return checkTripAccess(user, row);
 }
 
+// 金額：空值或 0 ~ 10 億
+function moneyOrNull(value, label) {
+  const v = value === '' || value == null ? null : Number(value);
+  if (v != null && (!Number.isFinite(v) || v < 0 || v > 1e9)) throw new HttpError(400, `${label}不正確`);
+  return v;
+}
+
 // 地點欄位驗證（create 時 partial = false）
 function stopFields(trip, b, partial) {
   const patch = {};
@@ -77,11 +84,8 @@ function stopFields(trip, b, partial) {
   }
   if (has('address')) patch.address = optionalText(b.address, LIMITS.stopAddress, '地址') || null;
   if (has('notes')) patch.notes = optionalText(b.notes, LIMITS.stopNotes, '備註') || null;
-  if (has('cost')) {
-    const cost = b.cost === '' || b.cost == null ? null : Number(b.cost);
-    if (cost != null && (!Number.isFinite(cost) || cost < 0 || cost > 1e9)) throw new HttpError(400, '花費不正確');
-    patch.cost = cost;
-  }
+  if (has('cost')) patch.cost = moneyOrNull(b.cost, '花費');
+  if (has('arriveCost')) patch.arriveCost = moneyOrNull(b.arriveCost, '交通費');
   if (has('arriveMode')) {
     if (b.arriveMode && !TRAVEL_MODES.includes(b.arriveMode)) throw new HttpError(400, '交通方式不正確');
     patch.arriveMode = b.arriveMode || null;
@@ -98,6 +102,7 @@ const tripJson = (t) => ({
   endDate: t.endDate,
   color: t.color,
   travelMode: t.routeMode,
+  budget: t.budget,
   ownerId: t.ownerId,
   createdAt: t.createdAt,
   updatedAt: t.updatedAt,
@@ -185,6 +190,7 @@ router.put('/:id', async (c) => {
     if (!DEFAULT_TRAVEL_MODES.includes(b.travelMode)) throw new HttpError(400, '交通方式不正確');
     patch.routeMode = b.travelMode;
   }
+  if (b.budget !== undefined) patch.budget = moneyOrNull(b.budget, '預算');
   if (b.startDate !== undefined || b.endDate !== undefined) {
     patch.startDate = b.startDate ?? trip.startDate;
     patch.endDate = b.endDate ?? trip.endDate;
@@ -265,7 +271,7 @@ router.put('/:id/stops/:stopId', async (c) => {
 });
 
 // 一次更新多個地點的時間 / 順序 / 交通方式（自動排時間、最佳順序），D1 一次往返
-const BULK_FIELDS = ['startTime', 'endTime', 'sortOrder', 'arriveMode'];
+const BULK_FIELDS = ['startTime', 'endTime', 'sortOrder', 'arriveMode', 'arriveCost'];
 router.patch('/:id/stops', async (c) => {
   const trip = await assertTripAccess(c, c.req.param('id'));
   const { updates } = await c.req.json();

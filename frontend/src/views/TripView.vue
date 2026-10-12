@@ -21,6 +21,7 @@
             </template>
             <button class="menu-item" @click="settingsOpen = true"><Icon name="settings" />行程設定</button>
             <button class="menu-item" @click="fitMap"><Icon name="fit" />顯示全部地點</button>
+            <button class="menu-item" @click="budgetOpen = true"><Icon name="wallet" />預算與花費</button>
             <div class="border-t border-line my-1"></div>
             <button v-if="trip.isMember && trip.ownerId !== auth.user?.id" class="menu-item" @click="leave"><Icon name="door" />離開行程</button>
             <button v-if="trip.canManage" class="menu-item !text-[#c50f1f]" @click="removeTrip"><Icon name="trash" />刪除行程</button>
@@ -29,7 +30,9 @@
         <div class="text-xs text-ink-3 flex flex-wrap gap-x-3">
           <span>{{ fmtTripRange(trip) }}</span>
           <span>{{ stops.length }} 個地點</span>
-          <span v-if="totalCost">預估花費 {{ fmtCost(totalCost) }}</span>
+          <button type="button" class="hover:underline cursor-pointer" :class="overBudget ? 'text-[#c50f1f] font-semibold' : ''" title="預算與花費統計" @click="budgetOpen = true">
+            {{ totalCost ? `預估花費 ${fmtCost(totalCost)}` : '預算' }}<template v-if="trip.budget">／預算 {{ fmtCost(trip.budget) }}</template>
+          </button>
         </div>
       </div>
 
@@ -264,6 +267,11 @@
                           <span class="w-4"><Icon v-if="g.stops[index + 1].arriveMode === lineMode.key" name="check" :size="14" class="text-accent" /></span>
                           <span>{{ lineMode.emoji }}</span>{{ lineMode.label }}
                         </button>
+                        <div class="border-t border-line my-1"></div>
+                        <button class="menu-item" @click="editStop(g.stops[index + 1], 'arriveCost')">
+                          <span class="w-4"><Icon name="wallet" :size="14" /></span>
+                          {{ g.stops[index + 1].arriveCost ? `交通費 ${fmtCost(g.stops[index + 1].arriveCost)}` : '填寫這段交通費' }}
+                        </button>
                       </div>
                     </Popover>
                     <a
@@ -306,6 +314,15 @@
 
     <StopEditor v-model="editing" :days="days" :saving="saving" @save="saveStop" @delete="deleteStop" />
     <TripFormDialog v-model="settingsOpen" :trip="trip" @saved="onTripSaved" />
+    <BudgetDialog
+      v-model="budgetOpen"
+      :trip="trip"
+      :stops="stops"
+      :days="days"
+      :member-count="members.length"
+      @save-budget="saveBudget"
+      @edit="editFromBudget"
+    />
     <AutoScheduleDialog
       :group="scheduleGroup"
       :travel-mode="trip.travelMode"
@@ -335,13 +352,14 @@ import TripIcon from '@/components/trip/TripIcon.vue';
 import TripMap from '@/components/trip/TripMap.vue';
 import StopEditor from '@/components/trip/StopEditor.vue';
 import TripFormDialog from '@/components/trip/TripFormDialog.vue';
+import BudgetDialog from '@/components/trip/BudgetDialog.vue';
 import AutoScheduleDialog from '@/components/trip/AutoScheduleDialog.vue';
 import OptimizeOrderDialog from '@/components/trip/OptimizeOrderDialog.vue';
 import api from '@/api';
 import { sortOrderAt } from '@/utils/planner';
 import {
   tripDays, fmtTripRange, categoryInfo, distanceKm, fmtDistance, fmtCost, byStopOrder,
-  sortOrderForTime, searchPlaces, UNSCHEDULED_COLOR, inTaiwan,
+  sortOrderForTime, searchPlaces, stopTotal, UNSCHEDULED_COLOR, inTaiwan,
   parseCoordinates, isGoogleMapsUrl, isShortGoogleUrl, placeFromGoogleUrl,
   TRAVEL_MODES, DEFAULT_TRAVEL_MODES, travelModeInfo, planDayRoute, upgradeRailLegs, fmtDuration, googleDirectionsUrl, googleSegmentUrl,
 } from '@/utils/trip';
@@ -381,7 +399,9 @@ const mobileTabs = [{ key: 'list', label: '行程', icon: 'list' }, { key: 'map'
 
 const days = computed(() => tripDays(trip.value));
 const unscheduled = computed(() => stops.value.filter((s) => !s.date).sort(byStopOrder));
-const totalCost = computed(() => stops.value.reduce((sum, s) => sum + (s.cost || 0), 0));
+const totalCost = computed(() => stops.value.reduce((sum, s) => sum + stopTotal(s), 0));
+const overBudget = computed(() => !!trip.value?.budget && totalCost.value > trip.value.budget);
+const budgetOpen = ref(false);
 
 const groups = computed(() => {
   const list = days.value.map((d) => {
@@ -398,7 +418,7 @@ const groups = computed(() => {
       color: d.color,
       numbered: true,
       stops: dayStops,
-      cost: dayStops.reduce((sum, s) => sum + (s.cost || 0), 0),
+      cost: dayStops.reduce((sum, s) => sum + stopTotal(s), 0),
       legs: route?.legs,
       distance: route ? route.legs.reduce((sum, l) => sum + l.distance, 0) : straight,
       duration: route ? route.legs.reduce((sum, l) => sum + (l.duration || 0), 0) : 0,
@@ -633,6 +653,11 @@ function seg(g, index) {
   const custom = !!g.stops[index + 1].arriveMode;
   const leg = g.legs?.[index];
   const straight = fmtDistance(distanceKm(g.stops[index], g.stops[index + 1]));
+  const fare = g.stops[index + 1].arriveCost;
+  const r = segDetail(info, custom, leg, straight);
+  return fare ? { ...r, detail: `${r.detail} · ${fmtCost(fare)}` } : r;
+}
+function segDetail(info, custom, leg, straight) {
   if (!leg) return { info, custom, detail: '計算路線中…', failed: false };
   if (info.kind === 'line') return { info, custom, detail: `直線 ${straight}`, failed: false };
   if (leg.failed) return { info, custom, detail: `無法規劃道路，改顯示直線 ${straight}`, failed: true };
@@ -672,8 +697,8 @@ function openNewStop(place) {
 /* ---- 編輯 / 儲存地點 ---- */
 const dayStopsOf = (date) => stops.value.filter((s) => s.date === date);
 
-function editStop(s) {
-  editing.value = { ...s };
+function editStop(s, focus) {
+  editing.value = { ...s, focus };
 }
 
 async function saveStop(form) {
@@ -686,6 +711,7 @@ async function saveStop(form) {
     endTime: form.endTime,
     address: form.address,
     cost: form.cost,
+    arriveCost: form.arriveCost,
     notes: form.notes,
     lat: form.lat,
     lng: form.lng,
@@ -788,6 +814,25 @@ async function applyOrder(updates, { reschedule }) {
   if (!(await bulkUpdate(updates))) return;
   ui.toast('已改為最佳順序', 'success');
   if (reschedule) scheduleDate.value = date; // 順序變了，時間也要重算
+}
+
+/* ---- 預算 ---- */
+async function saveBudget(value) {
+  const old = trip.value.budget;
+  trip.value.budget = value;
+  try {
+    await api.put(`/trips/${tripId}`, { budget: value });
+  } catch (e) {
+    trip.value.budget = old;
+    ui.error(e);
+  }
+}
+
+function editFromBudget(id, fare) {
+  const s = stops.value.find((x) => x.id === id);
+  if (!s) return;
+  budgetOpen.value = false;
+  editStop(s, fare ? 'arriveCost' : undefined);
 }
 
 /* ---- 地圖互動 ---- */
