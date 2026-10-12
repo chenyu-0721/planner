@@ -264,6 +264,24 @@ router.put('/:id/stops/:stopId', async (c) => {
   return c.json(stopJson(stop));
 });
 
+// 一次更新多個地點的時間 / 順序 / 交通方式（自動排時間、最佳順序），D1 一次往返
+const BULK_FIELDS = ['startTime', 'endTime', 'sortOrder', 'arriveMode'];
+router.patch('/:id/stops', async (c) => {
+  const trip = await assertTripAccess(c, c.req.param('id'));
+  const { updates } = await c.req.json();
+  if (!Array.isArray(updates) || !updates.length || updates.length > 100) throw new HttpError(400, '更新資料不正確');
+  const db = getDb(c);
+  const statements = updates.map((u) => {
+    const picked = Object.fromEntries(BULK_FIELDS.filter((k) => u?.[k] !== undefined).map((k) => [k, u[k]]));
+    const patch = stopFields(trip, picked, true);
+    if (!Object.keys(patch).length) throw new HttpError(400, '更新資料不正確');
+    return db.update(tripStops).set(patch)
+      .where(and(eq(tripStops.id, toId(u.id)), eq(tripStops.tripId, trip.id))).returning();
+  });
+  const results = await db.batch(statements);
+  return c.json(results.flat().map(stopJson));
+});
+
 router.delete('/:id/stops/:stopId', async (c) => {
   const trip = await assertTripAccess(c, c.req.param('id'));
   const deleted = await getDb(c).delete(tripStops)

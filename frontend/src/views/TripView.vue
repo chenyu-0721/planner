@@ -158,6 +158,15 @@
               >
                 <Icon name="external" :size="14" />
               </a>
+              <Popover v-if="g.numbered && g.stops.length > 1" close-on-click placement="bottom-end">
+                <template #trigger>
+                  <button class="icon-btn !size-7" title="自動排時間、最佳順序"><Icon name="clock" :size="14" /></button>
+                </template>
+                <button class="menu-item" @click="scheduleDate = g.date"><Icon name="clock" />自動排時間</button>
+                <button class="menu-item" :disabled="g.stops.length < 3" :class="g.stops.length < 3 ? 'opacity-50 pointer-events-none' : ''" @click="optimizeDate = g.date">
+                  <Icon name="route" />最佳順序<span v-if="g.stops.length < 3" class="ml-auto text-xs text-ink-4">需 3 個地點</span>
+                </button>
+              </Popover>
             </header>
 
             <draggable
@@ -287,6 +296,21 @@
 
     <StopEditor v-model="editing" :days="days" :saving="saving" @save="saveStop" @delete="deleteStop" />
     <TripFormDialog v-model="settingsOpen" :trip="trip" @saved="onTripSaved" />
+    <AutoScheduleDialog
+      :group="scheduleGroup"
+      :travel-mode="trip.travelMode"
+      :routing="routing"
+      :saving="bulkSaving"
+      @close="scheduleDate = null"
+      @apply="applySchedule"
+    />
+    <OptimizeOrderDialog
+      :group="optimizeGroup"
+      :travel-mode="trip.travelMode"
+      :saving="bulkSaving"
+      @close="optimizeDate = null"
+      @apply="applyOrder"
+    />
   </template>
 </template>
 
@@ -301,6 +325,8 @@ import TripIcon from '@/components/trip/TripIcon.vue';
 import TripMap from '@/components/trip/TripMap.vue';
 import StopEditor from '@/components/trip/StopEditor.vue';
 import TripFormDialog from '@/components/trip/TripFormDialog.vue';
+import AutoScheduleDialog from '@/components/trip/AutoScheduleDialog.vue';
+import OptimizeOrderDialog from '@/components/trip/OptimizeOrderDialog.vue';
 import api from '@/api';
 import { sortOrderAt } from '@/utils/planner';
 import {
@@ -347,7 +373,9 @@ const totalCost = computed(() => stops.value.reduce((sum, s) => sum + (s.cost ||
 const groups = computed(() => {
   const list = days.value.map((d) => {
     const dayStops = stops.value.filter((s) => s.date === d.date).sort(byStopOrder);
-    const route = routes.value[d.date];
+    // 路線是依哪個順序算的；順序剛改、還沒重算完時先不用舊的路段
+    const saved = routes.value[d.date];
+    const route = saved?.ids === dayStops.map((s) => s.id).join(',') ? saved : null;
     const straight = dayStops.slice(1).reduce((sum, s, i) => sum + distanceKm(dayStops[i], s), 0);
     return {
       key: d.date,
@@ -497,7 +525,7 @@ async function computeRoutes() {
       try {
         const route = await planDayRoute(dayStops, mode);
         if (route) {
-          next[d.date] = route;
+          next[d.date] = { ...route, ids: dayStops.map((s) => s.id).join(',') };
           pendingRail.push({ date: d.date, stops: dayStops });
         }
       } catch {
@@ -514,7 +542,7 @@ async function computeRoutes() {
         const legs = current.legs.slice();
         legs[index] = leg;
         const lines = current.lines.map((line) => (line.segIndex === index ? { ...line, coords: leg.coords } : line));
-        routes.value = { ...routes.value, [item.date]: { lines, legs } };
+        routes.value = { ...routes.value, [item.date]: { ...current, lines, legs } };
       });
     }
   } finally {
@@ -656,6 +684,46 @@ function onDragChange(e, g) {
   const s = evt.element;
   const list = g.stops.filter((x) => x.id !== s.id);
   patchStop(s, { date: g.date, sortOrder: sortOrderAt(list, evt.newIndex) });
+}
+
+/* ---- 自動排時間 / 最佳順序 ---- */
+const scheduleDate = ref(null);
+const optimizeDate = ref(null);
+const bulkSaving = ref(false);
+const scheduleGroup = computed(() => (scheduleDate.value ? groups.value.find((g) => g.date === scheduleDate.value) : null));
+const optimizeGroup = computed(() => (optimizeDate.value ? groups.value.find((g) => g.date === optimizeDate.value) : null));
+
+// 先更新畫面，再一次送出；失敗時還原
+async function bulkUpdate(updates) {
+  const backup = stops.value.map((s) => ({ ...s }));
+  for (const u of updates) {
+    const s = stops.value.find((x) => x.id === u.id);
+    if (s) upsertStop({ ...s, ...u });
+  }
+  bulkSaving.value = true;
+  try {
+    (await api.patch(`/trips/${tripId}/stops`, { updates })).forEach(upsertStop);
+    return true;
+  } catch (e) {
+    stops.value = backup;
+    ui.error(e);
+    return false;
+  } finally {
+    bulkSaving.value = false;
+  }
+}
+
+async function applySchedule(updates) {
+  scheduleDate.value = null;
+  if (await bulkUpdate(updates)) ui.toast(`已更新 ${updates.length} 個地點的時間`, 'success');
+}
+
+async function applyOrder(updates, { reschedule }) {
+  const date = optimizeDate.value;
+  optimizeDate.value = null;
+  if (!(await bulkUpdate(updates))) return;
+  ui.toast('已改為最佳順序', 'success');
+  if (reschedule) scheduleDate.value = date; // 順序變了，時間也要重算
 }
 
 /* ---- 地圖互動 ---- */

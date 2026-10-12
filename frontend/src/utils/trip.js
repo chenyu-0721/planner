@@ -451,3 +451,170 @@ export function googleDirectionsUrl(stops, mode) {
   if (list.length > 2) params.set('waypoints', list.slice(1, -1).map(ll).join('|'));
   return `https://www.google.com/maps/dir/?${params}`;
 }
+
+/* ---------- 自動排時間 ---------- */
+
+// 各類地點預設停留時間（分鐘）。住宿 0 = 只記抵達／出發時間
+export const DEFAULT_STAY = { sight: 90, food: 60, hotel: 0, transport: 15, shopping: 60, activity: 120, other: 60 };
+const DAY_END = 24 * 60 - 1;
+const STRAIGHT_SPEED = 40; // 沒有道路時間時（直線、規劃失敗）用的估算時速，距離再乘 1.3 當作繞路
+
+export const timeToMin = (t) => (t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : null);
+export const minToTime = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/** 某一段的交通時間（秒）；沒有道路／軌道時間時以直線距離估算 */
+export function legSeconds(leg, from, to) {
+  if (leg?.duration) return leg.duration;
+  const km = leg && !leg.failed && leg.distance ? leg.distance : distanceKm(from, to) * 1.3;
+  return (km / STRAIGHT_SPEED) * 3600;
+}
+
+/**
+ * 依出發時間、交通時間與停留時間，算出每個地點的開始／結束時間
+ * @param {object[]} dayStops 當天地點（已排序）
+ * @param {object[]} legs 當天路段（第 i 段 = 第 i 個地點 → 第 i+1 個），可為空
+ * @param {{ start: string, buffer: number, keepStay: boolean, stays: object }} options
+ * @returns {{ stop, travel: number|null, startTime: string|null, endTime: string|null, overflow: boolean }[]}
+ */
+export function planSchedule(dayStops, legs, { start, buffer = 0, keepStay = true, stays = DEFAULT_STAY }) {
+  let t = timeToMin(start) ?? 9 * 60;
+  let overflow = false;
+  return dayStops.map((stop, i) => {
+    let travel = null;
+    if (i > 0) {
+      travel = Math.ceil(legSeconds(legs?.[i - 1], dayStops[i - 1], stop) / 60);
+      t = Math.ceil((t + travel + buffer) / 5) * 5; // 抵達時間取到 5 分鐘
+    }
+    const own = timeToMin(stop.endTime) - timeToMin(stop.startTime);
+    const stay = keepStay && stop.startTime && stop.endTime && own > 0 ? own : (stays[stop.category] ?? 60);
+    if (overflow || t > DAY_END) {
+      overflow = true;
+      return { stop, travel, startTime: null, endTime: null, overflow };
+    }
+    const row = { stop, travel, startTime: minToTime(t), endTime: stay > 0 ? minToTime(Math.min(DAY_END, t + stay)) : null, overflow: false };
+    t += stay;
+    return row;
+  });
+}
+
+/* ---------- 最佳順序 ----------
+ * 用 OSRM table（同一個免費路線服務）取得各地點之間的道路行車時間，再找出總時間最短的順序。
+ * 起點固定為當天第一個地點，可選擇終點也固定（例如最後回到住宿）。
+ */
+const TABLE_PROFILES = {
+  car: 'routed-car/table/v1/driving',
+  scooter: 'routed-car/table/v1/driving', // Valhalla 的矩陣服務限制較多，機車用汽車道路時間比較順序即可
+  bike: 'routed-bike/table/v1/bike',
+  foot: 'routed-foot/table/v1/foot',
+};
+const MAX_TABLE_POINTS = 25;
+
+const straightMatrix = (points) => points.map((a) => points.map((b) => ((distanceKm(a, b) * 1.3) / STRAIGHT_SPEED) * 3600));
+
+/**
+ * 各點之間的移動時間矩陣（秒）
+ * @returns {Promise<{ durations: number[][], byRoad: boolean }>}
+ */
+export async function travelMatrix(mode, points, signal) {
+  const profile = TABLE_PROFILES[mode];
+  if (profile && points.length <= MAX_TABLE_POINTS) {
+    try {
+      const coordStr = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
+      const res = await fetch(`https://routing.openstreetmap.de/${profile}/${coordStr}?annotations=duration`, { signal });
+      const data = res.ok ? await res.json() : null;
+      if (data?.code === 'Ok' && data.durations) {
+        // 到不了的組合（例如離島）以直線估算補上
+        const fallback = straightMatrix(points);
+        return { durations: data.durations.map((row, i) => row.map((v, j) => v ?? fallback[i][j] * 3)), byRoad: true };
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+    }
+  }
+  return { durations: straightMatrix(points), byRoad: false };
+}
+
+export const orderCost = (matrix, order) => order.slice(1).reduce((sum, j, k) => sum + matrix[order[k]][j], 0);
+
+// 動態規劃求精確解（地點少時）。起點 0；fixEnd 時終點為最後一個
+function exactOrder(matrix, fixEnd) {
+  const n = matrix.length;
+  const end = fixEnd ? n - 1 : -1;
+  const mids = [];
+  for (let i = 1; i < n; i += 1) if (i !== end) mids.push(i);
+  const m = mids.length;
+  const full = (1 << m) - 1;
+  const cost = Array.from({ length: 1 << m }, () => new Float64Array(m).fill(Infinity));
+  const from = Array.from({ length: 1 << m }, () => new Int8Array(m).fill(-1));
+  for (let k = 0; k < m; k += 1) cost[1 << k][k] = matrix[0][mids[k]];
+  for (let mask = 1; mask <= full; mask += 1) {
+    for (let k = 0; k < m; k += 1) {
+      const c = cost[mask][k];
+      if (!(mask & (1 << k)) || c === Infinity) continue;
+      for (let nk = 0; nk < m; nk += 1) {
+        if (mask & (1 << nk)) continue;
+        const next = mask | (1 << nk);
+        const v = c + matrix[mids[k]][mids[nk]];
+        if (v < cost[next][nk]) {
+          cost[next][nk] = v;
+          from[next][nk] = k;
+        }
+      }
+    }
+  }
+  let bestK = 0;
+  let best = Infinity;
+  for (let k = 0; k < m; k += 1) {
+    const v = cost[full][k] + (fixEnd ? matrix[mids[k]][end] : 0);
+    if (v < best) {
+      best = v;
+      bestK = k;
+    }
+  }
+  const order = [];
+  let mask = full;
+  for (let k = bestK; k >= 0;) {
+    order.push(mids[k]);
+    const prev = from[mask][k];
+    mask &= ~(1 << k);
+    k = prev;
+  }
+  return [0, ...order.reverse(), ...(fixEnd ? [end] : [])];
+}
+
+// 地點多時：最近鄰居法 + 2-opt 改善
+function heuristicOrder(matrix, fixEnd) {
+  const n = matrix.length;
+  const end = fixEnd ? n - 1 : -1;
+  const left = new Set([...Array(n).keys()].filter((i) => i !== 0 && i !== end));
+  const order = [0];
+  while (left.size) {
+    const cur = order[order.length - 1];
+    let next = null;
+    for (const j of left) if (next === null || matrix[cur][j] < matrix[cur][next]) next = j;
+    order.push(next);
+    left.delete(next);
+  }
+  if (fixEnd) order.push(end);
+  const last = fixEnd ? n - 2 : n - 1;
+  for (let improved = true, round = 0; improved && round < 50; round += 1) {
+    improved = false;
+    for (let i = 1; i < last; i += 1) {
+      for (let k = i + 1; k <= last; k += 1) {
+        const candidate = [...order.slice(0, i), ...order.slice(i, k + 1).reverse(), ...order.slice(k + 1)];
+        if (orderCost(matrix, candidate) < orderCost(matrix, order) - 1) {
+          order.splice(0, n, ...candidate);
+          improved = true;
+        }
+      }
+    }
+  }
+  return order;
+}
+
+/** 總移動時間最短的順序（回傳原陣列的索引） */
+export function bestOrder(matrix, { fixEnd = false } = {}) {
+  const n = matrix.length;
+  if (n <= 2 || (fixEnd && n <= 3)) return [...Array(n).keys()];
+  return n <= 13 ? exactOrder(matrix, fixEnd) : heuristicOrder(matrix, fixEnd);
+}
