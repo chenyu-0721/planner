@@ -1,4 +1,5 @@
 import { addDays, diffDays, parseDate, sortOrderAt } from './planner';
+import { cachedRailRoute, fetchRailRoute } from './railRoute';
 
 // 地點類別（地圖圖標）
 export const CATEGORIES = [
@@ -109,27 +110,36 @@ export const inTaiwan = (lat, lng) => lat >= TAIWAN_BOUNDS[0][0] && lat <= TAIWA
   && lng >= TAIWAN_BOUNDS[0][1] && lng <= TAIWAN_BOUNDS[1][1];
 
 /* ---------- 地點搜尋 ----------
- * Photon（OpenStreetMap 資料，允許邊打字邊搜尋），限定台灣範圍
+ * Photon（OpenStreetMap 資料，允許邊打字邊搜尋），限定台灣、以目前行程位置為中心排序。
  * lang=default：使用當地名稱（台灣即中文）。不指定時 Photon 會依瀏覽器語言回傳，
- * 但它不支援中文，會改用英文名稱（例如「Taipei 101」）
+ * 但它不支援中文，會改用英文名稱（例如「Taipei 101」）。
+ * 會順便去掉空白、全形，以及結尾的「店／餐廳」，多試一次。
+ * OpenStreetMap 找不到的地方，可以貼上 Google 地圖的分享連結或座標（見下方 parse 函式）。
  */
 const PHOTON = 'https://photon.komoot.io/api/';
 
 const withHao = (n) => (n ? (/[號号]$/.test(n) ? n : `${n}號`) : '');
 const joinAddress = (...parts) => parts.filter(Boolean).filter((p, i, arr) => arr.indexOf(p) === i).join('');
 
-export async function searchPlaces(query, signal) {
+function searchVariants(query) {
+  const half = query.trim().replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  const compact = half.replace(/\s+/g, '');
+  const stripped = compact.replace(/(分店|門市|旗艦店|店|餐廳)$/, '');
+  return [...new Set([half, compact, stripped].filter((q) => q.length >= 2))].slice(0, 2);
+}
+
+async function photonSearch(query, signal, center) {
   const [[s, w], [n, e]] = TAIWAN_BOUNDS;
-  const url = `${PHOTON}?q=${encodeURIComponent(query)}&limit=8&lang=default&bbox=${w},${s},${e},${n}`;
+  let url = `${PHOTON}?q=${encodeURIComponent(query)}&limit=20&lang=default&bbox=${w},${s},${e},${n}`;
+  if (center) url += `&lat=${center.lat.toFixed(4)}&lon=${center.lng.toFixed(4)}&location_bias_scale=0.3`;
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error('地點搜尋失敗，請稍後再試');
   const data = await res.json();
-  return data.features
-    .filter((f) => f.properties.countrycode === 'TW')
+  return (data.features || [])
+    .filter((f) => f.properties?.countrycode === 'TW' && f.geometry?.coordinates)
     .map((f) => {
       const p = f.properties;
       const [lng, lat] = f.geometry.coordinates;
-      // 台灣地址：縣市 → 鄉鎮市區 → 路名門牌（省級名稱不顯示）
       const address = joinAddress(p.county, p.city, p.district, p.street, withHao(p.housenumber));
       return {
         title: p.name || joinAddress(p.street, withHao(p.housenumber)) || p.city || '新地點',
@@ -137,27 +147,85 @@ export async function searchPlaces(query, signal) {
         lat,
         lng,
       };
-    })
-    .filter((r, i, arr) => arr.findIndex((x) => x.title === r.title && Math.abs(x.lat - r.lat) < 1e-4) === i);
+    });
+}
+
+export async function searchPlaces(query, signal, center) {
+  const variants = searchVariants(query);
+  const batches = [];
+  for (const variant of variants) {
+    const rows = await photonSearch(variant, signal, center);
+    batches.push(...rows);
+    if (batches.length >= 8) break;
+  }
+  const unique = batches.filter((r, i, arr) => arr.findIndex((x) => x.title === r.title && Math.abs(x.lat - r.lat) < 1e-4) === i);
+  // 行程附近（40 公里內）的結果排前面，其餘維持原本的相關度順序
+  const NEAR_KM = 40;
+  const near = center ? unique.filter((r) => distanceKm(center, r) <= NEAR_KM) : [];
+  const far = center ? unique.filter((r) => distanceKm(center, r) > NEAR_KM) : unique;
+  return [...near, ...far].slice(0, 8);
+}
+
+/* ---------- 貼上座標或 Google 地圖連結 ---------- */
+
+// 「25.0339, 121.5645」這種座標
+export function parseCoordinates(text) {
+  const m = String(text).trim().match(/^(-?\d{1,2}\.\d+)\s*[,，\s]\s*(-?\d{2,3}\.\d+)$/);
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+const GOOGLE_URL = /^https?:\/\/((www\.|maps\.)?google\.[a-z.]+\/maps|maps\.google\.[a-z.]+\/?\?|maps\.app\.goo\.gl\/|goo\.gl\/maps\/|g\.co\/kgs\/)/i;
+export const isGoogleMapsUrl = (text) => GOOGLE_URL.test(String(text).trim());
+export const isShortGoogleUrl = (text) => /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl|g\.co)\//i.test(String(text).trim());
+
+/**
+ * 從 Google 地圖的完整網址讀出名稱與座標
+ * 座標優先用地點本身的 !3d…!4d…，其次是畫面中心 @lat,lng，再其次是 q= / query= 參數
+ * @returns {{ title: string, lat?: number, lng?: number } | null}
+ */
+export function placeFromGoogleUrl(url) {
+  let text = String(url);
+  try {
+    text = decodeURIComponent(text);
+  } catch {
+    // 編碼不完整時用原字串
+  }
+  const pick = (re) => {
+    const m = text.match(re);
+    return m ? { lat: Number(m[1]), lng: Number(m[2]) } : null;
+  };
+  const point = pick(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/)
+    || pick(/[?&](?:q|query|ll|destination)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/)
+    || pick(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  const nameMatch = text.match(/\/place\/([^/@?]+)/) || text.match(/[?&](?:q|query)=([^&]+)/);
+  let title = nameMatch ? nameMatch[1].replace(/\+/g, ' ').trim() : '';
+  if (parseCoordinates(title)) title = '';
+  if (!point && !title) return null;
+  return { title: title || '新地點', ...(point || {}) };
 }
 
 /* ---------- 交通方式與路線 ----------
  * 道路類：沿實際道路規劃
  *   開車 / 腳踏車 / 步行：OSRM（routing.openstreetmap.de，FOSSGIS 免費服務）
  *   機車：Valhalla motor_scooter（valhalla1.openstreetmap.de），會避開國道、以機車速度估算
- * 鐵路類（高鐵 / 火車）：沒有免費的班次資料，依兩站直線距離估算時間，並提供 Google 地圖查班次
+ * 軌道類（高鐵 / 火車 / 捷運）：沿 OpenStreetMap 免費軌道畫線。沒有班表，時間依軌道長度估算。
+ * 查不到軌道時改畫直線，並提供 Google 地圖查班次
  */
 export const TRAVEL_MODES = [
   { key: 'car', label: '開車', emoji: '🚗', kind: 'road', engine: 'osrm', profile: 'routed-car/route/v1/driving', gmaps: 'driving' },
   { key: 'scooter', label: '機車', emoji: '🛵', kind: 'road', engine: 'valhalla', costing: 'motor_scooter', gmaps: 'driving' },
   { key: 'bike', label: '腳踏車', emoji: '🚲', kind: 'road', engine: 'osrm', profile: 'routed-bike/route/v1/bike', gmaps: 'bicycling' },
   { key: 'foot', label: '步行', emoji: '🚶', kind: 'road', engine: 'osrm', profile: 'routed-foot/route/v1/foot', gmaps: 'walking' },
-  // speed：以「直線距離」換算的平均時速（含停靠站），依實際班次校正
-  { key: 'hsr', label: '高鐵', emoji: '🚄', kind: 'rail', speed: 165, gmaps: 'transit' },
-  { key: 'train', label: '火車', emoji: '🚆', kind: 'rail', speed: 60, gmaps: 'transit' },
+  // speed：直線後備的時速。trackSpeed：沿著軌道時的時速（含停靠）
+  { key: 'hsr', label: '高鐵', emoji: '🚄', kind: 'rail', speed: 165, trackSpeed: 180, gmaps: 'transit' },
+  { key: 'train', label: '火車', emoji: '🚆', kind: 'rail', speed: 60, trackSpeed: 80, gmaps: 'transit' },
+  { key: 'mrt', label: '捷運', emoji: '🚇', kind: 'rail', speed: 25, trackSpeed: 34, gmaps: 'transit' },
   { key: 'straight', label: '直線', emoji: '📏', kind: 'line', gmaps: 'driving' },
 ];
-// 行程預設只能選道路類與直線（高鐵 / 火車只用在單一路段）
+// 行程預設只能選道路類與直線（高鐵 / 火車 / 捷運只用在單一路段）
 export const DEFAULT_TRAVEL_MODES = TRAVEL_MODES.filter((m) => m.kind !== 'rail');
 export const travelModeInfo = (key) => TRAVEL_MODES.find((m) => m.key === key) || TRAVEL_MODES[0];
 
@@ -248,7 +316,7 @@ export async function planDayRoute(stops, defaultMode) {
       last.segs.push(seg);
       last.end = i + 1;
     } else {
-      runs.push({ mode: seg.mode, segs: [seg], end: i + 1 });
+      runs.push({ mode: seg.mode, segs: [seg], start: i, end: i + 1 });
     }
   });
 
@@ -270,19 +338,84 @@ export async function planDayRoute(stops, defaultMode) {
       run.legs = run.segs.map((seg) => ({ mode: run.mode, distance: distanceKm(seg.from, seg.to), duration: null, failed: true }));
       return;
     }
+    if (info.kind === 'rail') {
+      // 先用直線估時，軌道改由 upgradeRailLegs 在背景補上，避免整段行程卡住
+      const lines = [];
+      const legs = [];
+      run.segs.forEach((seg, j) => {
+        const straightKm = distanceKm(seg.from, seg.to);
+        const routed = cachedRailRoute(run.mode, seg.from, seg.to);
+        const segIndex = run.start + j;
+        if (routed) {
+          lines.push({ mode: run.mode, coords: routed.coords, segIndex });
+          legs.push({
+            mode: run.mode,
+            distance: routed.distance,
+            duration: (routed.distance / (info.trackSpeed || info.speed)) * 3600,
+            estimated: true,
+            alongTrack: true,
+            coords: routed.coords,
+          });
+          return;
+        }
+        lines.push({ mode: run.mode, coords: straightLeg(seg), segIndex });
+        legs.push({
+          mode: run.mode,
+          distance: straightKm,
+          duration: (straightKm / info.speed) * 3600,
+          estimated: true,
+          alongTrack: false,
+        });
+      });
+      run.lines = lines;
+      run.legs = legs;
+      return;
+    }
     run.lines = run.segs.map((seg) => ({ mode: run.mode, coords: straightLeg(seg) }));
-    run.legs = run.segs.map((seg) => {
-      const km = distanceKm(seg.from, seg.to);
-      return {
-        mode: run.mode,
-        distance: km,
-        duration: info.kind === 'rail' ? (km / info.speed) * 3600 : null,
-        estimated: info.kind === 'rail',
-      };
-    });
+    run.legs = run.segs.map((seg) => ({ mode: run.mode, distance: distanceKm(seg.from, seg.to), duration: null, estimated: false }));
   }));
 
   return { lines: runs.flatMap((r) => r.lines), legs: runs.flatMap((r) => r.legs) };
+}
+
+/** 背景補上軌道。每一段完成就呼叫 onLeg，呼叫端可先顯示直線。 */
+export function upgradeRailLegs(stops, defaultMode, onLeg) {
+  if (stops.length < 2) return Promise.resolve();
+  const jobs = stops.slice(1).flatMap((to, index) => {
+    const mode = to.arriveMode || defaultMode;
+    if (travelModeInfo(mode).kind !== 'rail' || cachedRailRoute(mode, stops[index], to)) return [];
+    return [{ index, from: stops[index], to, mode }];
+  });
+  // 免費的軌道服務偶爾忙碌：失敗時等一下再試，最多 3 次
+  const fetchWithRetry = async (job) => {
+    const delays = [0, 6000, 15000];
+    for (let i = 0; i < delays.length; i += 1) {
+      if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]));
+      try {
+        return await fetchRailRoute(job.mode, job.from, job.to);
+      } catch (e) {
+        if (i === delays.length - 1) throw e;
+      }
+    }
+    return null;
+  };
+  return Promise.all(jobs.map(async (job) => {
+    try {
+      const routed = await fetchWithRetry(job);
+      if (!routed) return;
+      const info = travelModeInfo(job.mode);
+      onLeg(job.index, {
+        mode: job.mode,
+        distance: routed.distance,
+        duration: (routed.distance / (info.trackSpeed || info.speed)) * 3600,
+        estimated: true,
+        alongTrack: true,
+        coords: routed.coords,
+      });
+    } catch {
+      // 軌道服務忙碌時保留直線
+    }
+  }));
 }
 
 export function fmtDuration(sec) {
@@ -297,7 +430,7 @@ export function fmtDuration(sec) {
 const ll = (p) => `${p.lat},${p.lng}`;
 export const googlePlaceUrl = (stop) => `https://www.google.com/maps/search/?api=1&query=${ll(stop)}`;
 
-// 單一路段（高鐵 / 火車會用大眾運輸，可查實際班次）
+// 單一路段（高鐵 / 火車 / 捷運會用大眾運輸，可查實際班次）
 export function googleSegmentUrl(from, to, mode) {
   const params = new URLSearchParams({
     api: '1', origin: ll(from), destination: ll(to), travelmode: travelModeInfo(mode).gmaps,

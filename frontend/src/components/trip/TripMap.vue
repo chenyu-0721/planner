@@ -34,7 +34,7 @@ import 'leaflet/dist/leaflet.css';
 import Icon from '../Icon.vue';
 import { useUiStore } from '@/stores/ui';
 import {
-  categoryInfo, byStopOrder, UNSCHEDULED_COLOR, BASE_LAYERS, TAIWAN_BOUNDS, TAIWAN_CENTER, MIN_ZOOM, inTaiwan, travelModeInfo,
+  categoryInfo, byStopOrder, UNSCHEDULED_COLOR, BASE_LAYERS, TAIWAN_BOUNDS, TAIWAN_CENTER, MIN_ZOOM, inTaiwan, travelModeInfo, fmtDuration,
 } from '@/utils/trip';
 
 const props = defineProps({
@@ -75,19 +75,45 @@ function pinIcon(stop, label, color) {
   });
 }
 
-// 線條樣式：道路 = 實線、高鐵 / 火車 = 軌道狀長虛線、直線 = 點線
+function legChipText(leg) {
+  const info = travelModeInfo(leg.mode);
+  if (!leg.duration) return `${info.emoji} ${info.label}`;
+  return info.kind === 'rail' ? `${info.emoji} 約 ${fmtDuration(leg.duration)}` : `${info.emoji} ${fmtDuration(leg.duration)}`;
+}
+
+// 線條樣式：道路 = 實線、高鐵 / 火車 / 捷運 = 虛線（不要看起來像道路）、直線 = 點線
 function drawLine({ mode, coords }, color) {
-  const kind = travelModeInfo(mode).kind;
-  if (kind === 'rail') {
-    L.polyline(coords, { color: '#fff', weight: 9, opacity: 0.95 }).addTo(layer);
-    L.polyline(coords, { color, weight: 6, opacity: 0.95 }).addTo(layer);
-    L.polyline(coords, { color: '#fff', weight: 2, opacity: 1, dashArray: '8 8' }).addTo(layer);
+  const info = travelModeInfo(mode);
+  const tip = `${info.emoji} ${info.label}`;
+  if (info.kind === 'rail') {
+    L.polyline(coords, { color: '#fff', weight: 7, opacity: 0.95, interactive: false }).addTo(layer);
+    L.polyline(coords, {
+      color, weight: 4, opacity: 0.95, dashArray: '14 10', lineCap: 'butt',
+    }).bindTooltip(tip, { sticky: true }).addTo(layer);
     return;
   }
-  L.polyline(coords, { color: '#fff', weight: 8, opacity: 0.9 }).addTo(layer);
+  L.polyline(coords, { color: '#fff', weight: 8, opacity: 0.9, interactive: false }).addTo(layer);
   L.polyline(coords, {
-    color, weight: 5, opacity: 0.95, dashArray: kind === 'road' ? null : '1 9', lineCap: 'round',
-  }).addTo(layer);
+    color, weight: 5, opacity: 0.95, dashArray: info.kind === 'road' ? null : '1 9', lineCap: 'round',
+  }).bindTooltip(tip, { sticky: true }).addTo(layer);
+}
+
+function addLegChip(from, to, leg, color) {
+  if (!from || !to || !leg) return;
+  const mid = leg.coords?.length
+    ? leg.coords[Math.floor(leg.coords.length / 2)]
+    : [(from.lat + to.lat) / 2, (from.lng + to.lng) / 2];
+  const marker = L.marker(mid, {
+    icon: L.divIcon({
+      className: 'trip-leg-label',
+      html: `<span class="trip-leg-chip" style="box-shadow:inset 3px 0 0 ${color}, 0 1px 3px rgba(0,0,0,.18)">${escapeHtml(legChipText(leg))}</span>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    }),
+    interactive: false,
+    keyboard: false,
+  });
+  marker.addTo(layer);
 }
 
 // 依目前篩選，整理出要顯示的每日路線
@@ -126,6 +152,7 @@ function render() {
       // 每一段依交通方式畫不同樣式；路線還沒算好時先畫直線
       const lines = g.route?.lines?.length ? g.route.lines : [{ mode: 'straight', coords: points }];
       for (const line of lines) drawLine(line, g.color);
+      g.route?.legs?.forEach((leg, i) => addLegChip(g.stops[i], g.stops[i + 1], leg, g.color));
     }
     prevLast = points[points.length - 1];
   }
@@ -202,6 +229,8 @@ onMounted(() => {
     minZoom: MIN_ZOOM,
   }).setView(TAIWAN_CENTER, MIN_ZOOM);
   setBase(baseKey.value);
+  // 道路路線（OSRM / Valhalla）、軌道與地點搜尋都使用 OpenStreetMap 資料（ODbL）
+  map.attributionControl.addAttribution('路線與軌道 &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>');
   layer = L.layerGroup().addTo(map);
   render();
   fit(false); // 第一次直接顯示在正確位置
@@ -248,5 +277,23 @@ defineExpose({ fit });
 }
 .map-btn:hover {
   color: var(--color-ink);
+}
+:deep(.trip-leg-label) {
+  background: none !important;
+  border: 0 !important;
+}
+:deep(.trip-leg-chip) {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px 0 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  font: 600 11px/1 "Segoe UI", sans-serif;
+  color: #242424;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 </style>

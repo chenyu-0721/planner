@@ -8,6 +8,7 @@ import bucketRoutes from './routes/buckets.js';
 import taskRoutes from './routes/tasks.js';
 import meRoutes from './routes/me.js';
 import tripRoutes from './routes/trips.js';
+import placeRoutes from './routes/places.js';
 
 // 前端靜態檔由 Workers Static Assets 提供（wrangler.jsonc 的 assets），
 // 只有 /api/* 與 /uploads/* 會進到這個 Worker
@@ -20,8 +21,9 @@ app.route('/api/buckets', bucketRoutes);
 app.route('/api/tasks', taskRoutes);
 app.route('/api/me', meRoutes);
 app.route('/api/trips', tripRoutes);
+app.route('/api/places', placeRoutes);
 
-// 前端需要知道的功能開關
+// 前端需要知道的功能開關（不回傳金鑰）
 app.get('/api/config', (c) => c.json({ fileUpload: fileUploadEnabled(c) }));
 
 // 附件檔案（R2，未綁定時不提供）

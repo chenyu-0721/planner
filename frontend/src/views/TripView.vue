@@ -92,29 +92,38 @@
         <div class="p-3 border-b border-line bg-white space-y-2">
           <form class="relative" @submit.prevent="search">
             <Icon name="search" :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" />
-            <input v-model="query" class="input !pl-8" placeholder="搜尋台灣的地點或地址" maxlength="200" @input="onQueryInput" />
+            <input v-model="query" class="input !pl-8" placeholder="搜尋地點，或貼上 Google 地圖連結" maxlength="2000" @input="onQueryInput" />
           </form>
           <div v-if="searching" class="text-xs text-ink-3 px-1">搜尋中…</div>
           <div v-else-if="results" class="rounded border border-line bg-white max-h-64 overflow-y-auto thin-scroll">
-            <div class="flex items-center justify-between px-3 h-8 text-xs text-ink-3 border-b border-line">
-              <span>{{ results.length ? '點選地點加入行程' : '找不到符合的地點，換個關鍵字試試' }}</span>
-              <button class="hover:text-ink cursor-pointer" @click="results = null"><Icon name="x" :size="13" /></button>
+            <div class="flex items-start justify-between gap-2 px-3 py-2 text-xs leading-4 text-ink-3 border-b border-line">
+              <span class="min-w-0">{{ results.length ? (searchNote || '點選地點加入行程') : (searchNote || '找不到符合的地點') }}</span>
+              <button class="hover:text-ink cursor-pointer shrink-0" @click="results = null"><Icon name="x" :size="13" /></button>
             </div>
             <button v-for="(r, i) in results" :key="i" class="w-full text-left px-3 py-2 hover:bg-hover cursor-pointer border-b border-line last:border-0" @click="openNewStop(r)">
               <div class="text-sm font-semibold truncate">{{ r.title }}</div>
               <div class="text-xs text-ink-3 line-clamp-2">{{ r.address }}</div>
             </button>
+            <div v-if="!results.length && !isGoogleMapsUrl(query)" class="px-3 py-2 border-t border-line">
+              <a :href="googleMapsSearchUrl" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-sm text-accent hover:underline">
+                在 Google 地圖搜尋「{{ query.trim() }}」<Icon name="external" :size="12" />
+              </a>
+              <p class="mt-1 text-xs leading-5 text-ink-3">找到後按「分享」→「複製連結」，貼回上方搜尋框就能加入行程。</p>
+            </div>
           </div>
         </div>
 
-        <!-- 交通方式（路線依此規劃） -->
-        <div class="flex items-center gap-2 px-3 pt-2 bg-white">
-          <span class="text-xs text-ink-3 shrink-0">路線</span>
-          <div class="flex gap-1 overflow-x-auto no-scrollbar">
-            <button v-for="m in DEFAULT_TRAVEL_MODES" :key="m.key" class="chip !h-7" :class="trip.travelMode === m.key ? 'chip-on' : ''" @click="setTravelMode(m.key)">
-              <span>{{ m.emoji }}</span>{{ m.label }}
-            </button>
+        <!-- 沒指定的路段用這個方式；每一段仍可另外改 -->
+        <div class="px-3 pt-2 bg-white">
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-ink-3 shrink-0">預設</span>
+            <div class="flex gap-1 overflow-x-auto no-scrollbar">
+              <button v-for="m in DEFAULT_TRAVEL_MODES" :key="m.key" class="chip !h-7" :class="trip.travelMode === m.key ? 'chip-on' : ''" @click="setTravelMode(m.key)">
+                <span>{{ m.emoji }}</span>{{ m.label }}
+              </button>
+            </div>
           </div>
+          <p class="mt-1 text-[11px] leading-4 text-ink-4">點兩地中間的卡片，可改那一段。例如上一段高鐵、下一段機車。</p>
         </div>
 
         <!-- 日期篩選 -->
@@ -163,6 +172,8 @@
               :force-fallback="true"
               :fallback-on-body="true"
               fallback-class="drag-fallback"
+              filter=".no-drag"
+              :prevent-on-filter="false"
               @change="(e) => onDragChange(e, g)"
             >
               <template #item="{ element: s, index }">
@@ -192,46 +203,61 @@
                       <Icon name="pencil" :size="14" />
                     </button>
                   </div>
-                  <div v-if="g.numbered && index < g.stops.length - 1" class="flex items-stretch pl-[18px] min-h-7">
+                  <div v-if="g.numbered && index < g.stops.length - 1" class="no-drag flex items-stretch gap-2 py-1.5 pl-[21px]">
                     <span class="w-px shrink-0" :style="{ background: g.color }"></span>
-                    <div class="flex items-center gap-1 flex-wrap ml-1.5 py-0.5 text-xs">
-                      <Popover close-on-click>
-                        <template #trigger>
-                          <button
-                            class="inline-flex items-center gap-1 h-6 px-1.5 rounded text-ink-3 hover:bg-black/5 hover:text-ink cursor-pointer"
-                            :class="g.stops[index + 1].arriveMode ? 'text-ink-2 font-semibold' : ''"
-                            title="變更這段的交通方式"
-                          >
-                            <span>{{ segMode(g, index).emoji }}</span>{{ segLabel(g, index) }}
-                            <Icon name="chevron-down" :size="12" />
-                          </button>
-                        </template>
-                        <div class="w-56">
-                          <div class="px-3 pt-1.5 pb-1 text-xs text-ink-3 truncate">前往「{{ g.stops[index + 1].title }}」</div>
-                          <button class="menu-item" @click="setArriveMode(g.stops[index + 1], null)">
-                            <span class="w-4"><Icon v-if="!g.stops[index + 1].arriveMode" name="check" :size="14" class="text-accent" /></span>
-                            跟隨行程預設（{{ travelModeInfo(trip.travelMode).label }}）
-                          </button>
-                          <div class="border-t border-line my-1"></div>
-                          <button v-for="m in TRAVEL_MODES" :key="m.key" class="menu-item" @click="setArriveMode(g.stops[index + 1], m.key)">
-                            <span class="w-4"><Icon v-if="g.stops[index + 1].arriveMode === m.key" name="check" :size="14" class="text-accent" /></span>
-                            <span>{{ m.emoji }}</span>{{ m.label }}
-                            <span v-if="m.kind === 'rail'" class="ml-auto text-[11px] text-ink-4">依距離估算</span>
-                          </button>
-                        </div>
-                      </Popover>
-                      <a
-                        v-if="travelModeInfo(segMode(g, index).key).kind === 'rail'"
-                        :href="googleSegmentUrl(s, g.stops[index + 1], segMode(g, index).key)"
-                        target="_blank"
-                        rel="noopener"
-                        class="inline-flex items-center gap-0.5 h-6 px-1 rounded text-accent hover:underline"
-                        title="在 Google 地圖查詢實際班次"
-                        @click.stop
-                      >
-                        查班次<Icon name="external" :size="11" />
-                      </a>
-                    </div>
+                    <Popover close-on-click block class="min-w-0 flex-1">
+                      <template #trigger>
+                        <button
+                          type="button"
+                          class="flex w-full items-center gap-2 rounded-md border bg-white px-2 py-1.5 text-left cursor-pointer hover:border-accent"
+                          :class="seg(g, index).custom ? 'border-accent' : 'border-line'"
+                          title="變更這一段的交通方式"
+                        >
+                          <span class="text-base leading-none shrink-0">{{ seg(g, index).info.emoji }}</span>
+                          <span class="min-w-0 flex-1">
+                            <span class="flex items-center gap-1.5">
+                              <span class="text-xs font-semibold text-ink">{{ seg(g, index).info.label }}</span>
+                              <span v-if="!seg(g, index).custom" class="text-[10px] text-ink-4">預設</span>
+                            </span>
+                            <span class="block truncate text-[11px]" :class="seg(g, index).failed ? 'text-[#c50f1f]' : 'text-ink-3'">{{ seg(g, index).detail }}</span>
+                          </span>
+                          <Icon name="chevron-down" :size="14" class="shrink-0 text-ink-3" />
+                        </button>
+                      </template>
+                      <div class="w-64">
+                        <div class="px-3 pt-1.5 pb-1 text-xs text-ink-3 truncate">這一段前往「{{ g.stops[index + 1].title }}」</div>
+                        <button class="menu-item" @click="setArriveMode(g.stops[index + 1], null)">
+                          <span class="w-4"><Icon v-if="!g.stops[index + 1].arriveMode" name="check" :size="14" class="text-accent" /></span>
+                          跟隨預設（{{ travelModeInfo(trip.travelMode).label }}）
+                        </button>
+                        <div class="px-3 pt-2 pb-0.5 text-[11px] font-semibold text-ink-4">沿道路</div>
+                        <button v-for="m in roadModes" :key="m.key" class="menu-item" @click="setArriveMode(g.stops[index + 1], m.key)">
+                          <span class="w-4"><Icon v-if="g.stops[index + 1].arriveMode === m.key" name="check" :size="14" class="text-accent" /></span>
+                          <span>{{ m.emoji }}</span>{{ m.label }}
+                        </button>
+                        <div class="px-3 pt-2 pb-0.5 text-[11px] font-semibold text-ink-4">軌道 · 依距離估算時間</div>
+                        <button v-for="m in railModes" :key="m.key" class="menu-item" @click="setArriveMode(g.stops[index + 1], m.key)">
+                          <span class="w-4"><Icon v-if="g.stops[index + 1].arriveMode === m.key" name="check" :size="14" class="text-accent" /></span>
+                          <span>{{ m.emoji }}</span>{{ m.label }}
+                        </button>
+                        <div class="border-t border-line my-1"></div>
+                        <button class="menu-item" @click="setArriveMode(g.stops[index + 1], lineMode.key)">
+                          <span class="w-4"><Icon v-if="g.stops[index + 1].arriveMode === lineMode.key" name="check" :size="14" class="text-accent" /></span>
+                          <span>{{ lineMode.emoji }}</span>{{ lineMode.label }}
+                        </button>
+                      </div>
+                    </Popover>
+                    <a
+                      v-if="seg(g, index).info.kind === 'rail'"
+                      :href="googleSegmentUrl(s, g.stops[index + 1], seg(g, index).info.key)"
+                      target="_blank"
+                      rel="noopener"
+                      class="inline-flex shrink-0 items-center gap-0.5 self-center h-7 px-1.5 rounded text-xs text-accent hover:bg-black/5"
+                      title="在 Google 地圖查詢實際班次"
+                      @click.stop
+                    >
+                      查班次<Icon name="external" :size="11" />
+                    </a>
                   </div>
                 </div>
               </template>
@@ -279,8 +305,9 @@ import api from '@/api';
 import { sortOrderAt } from '@/utils/planner';
 import {
   tripDays, fmtTripRange, categoryInfo, distanceKm, fmtDistance, fmtCost, byStopOrder,
-  sortOrderForTime, searchPlaces, UNSCHEDULED_COLOR,
-  TRAVEL_MODES, DEFAULT_TRAVEL_MODES, travelModeInfo, planDayRoute, fmtDuration, googleDirectionsUrl, googleSegmentUrl,
+  sortOrderForTime, searchPlaces, UNSCHEDULED_COLOR, inTaiwan,
+  parseCoordinates, isGoogleMapsUrl, isShortGoogleUrl, placeFromGoogleUrl,
+  TRAVEL_MODES, DEFAULT_TRAVEL_MODES, travelModeInfo, planDayRoute, upgradeRailLegs, fmtDuration, googleDirectionsUrl, googleSegmentUrl,
 } from '@/utils/trip';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
@@ -373,24 +400,78 @@ const upsertStop = (s) => {
 /* ---- 新增地點 ---- */
 let searchTimer = null;
 let searchAbort = null;
+let searchSeq = 0;
+const googleMapsSearchUrl = computed(() => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${query.value.trim()} 台灣`)}`);
+const canceled = (e) => e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError' || e?.name === 'AbortError';
+
+function searchCenter() {
+  const located = stops.value.filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lng));
+  const day = selectedDate.value && selectedDate.value !== 'unscheduled'
+    ? located.filter((s) => s.date === selectedDate.value)
+    : [];
+  const pool = day.length ? day : located;
+  if (!pool.length) return { lat: 25.047, lng: 121.517 };
+  return {
+    lat: pool.reduce((sum, s) => sum + s.lat, 0) / pool.length,
+    lng: pool.reduce((sum, s) => sum + s.lng, 0) / pool.length,
+  };
+}
+
+const searchNote = ref('');
+
+/**
+ * 搜尋順序：
+ *  1. 座標（例如 25.0339, 121.5645）
+ *  2. Google 地圖連結：從網址讀出名稱與座標；短網址先由後端解析出完整網址
+ *  3. 一般文字：OpenStreetMap（Photon）
+ */
 async function search() {
   clearTimeout(searchTimer);
   const q = query.value.trim();
+  searchNote.value = '';
   if (q.length < 2) {
     results.value = null;
     return;
   }
   searchAbort?.abort();
-  searchAbort = new AbortController();
+  const ac = new AbortController();
+  searchAbort = ac;
+  const seq = ++searchSeq;
+  const done = (rows, note = '') => {
+    if (seq !== searchSeq) return;
+    results.value = rows;
+    searchNote.value = note;
+    searching.value = false;
+  };
+  const outside = (p) => !inTaiwan(p.lat, p.lng);
+
+  const coords = parseCoordinates(q);
+  if (coords) {
+    if (outside(coords)) done([], '這個座標不在台灣範圍內');
+    else done([{ title: '座標位置', address: `${coords.lat}, ${coords.lng}`, ...coords }]);
+    return;
+  }
+
   searching.value = true;
   try {
-    results.value = await searchPlaces(q, searchAbort.signal);
-    searching.value = false;
-  } catch (e) {
-    if (e.name !== 'AbortError') {
-      searching.value = false;
-      ui.error(e);
+    if (isGoogleMapsUrl(q)) {
+      const url = isShortGoogleUrl(q) ? (await api.post('/places/resolve', { url: q }, { signal: ac.signal })).url : q;
+      const place = placeFromGoogleUrl(url);
+      if (place?.lat != null) {
+        if (outside(place)) done([], '這個地點不在台灣範圍內');
+        else done([{ title: place.title, address: 'Google 地圖連結', lat: place.lat, lng: place.lng }]);
+      } else if (place?.title) {
+        done(await searchPlaces(place.title, ac.signal, searchCenter()), `連結沒有座標，改用「${place.title}」搜尋`);
+      } else {
+        done([], '這個連結沒有位置資訊，請在 Google 地圖開啟地點後再按「分享」複製連結');
+      }
+      return;
     }
+    done(await searchPlaces(q, ac.signal, searchCenter()));
+  } catch (e) {
+    if (seq !== searchSeq || canceled(e) || e.status === 401) return;
+    searching.value = false;
+    ui.error(e);
   }
 }
 // 邊打字邊搜尋（停止輸入 400ms 後才查詢）
@@ -407,6 +488,7 @@ async function computeRoutes() {
   const seq = ++routeSeq;
   const mode = trip.value.travelMode;
   const next = {};
+  const pendingRail = [];
   routing.value = true;
   try {
     await Promise.all(days.value.map(async (d) => {
@@ -414,12 +496,27 @@ async function computeRoutes() {
       if (dayStops.length < 2) return;
       try {
         const route = await planDayRoute(dayStops, mode);
-        if (route) next[d.date] = route;
+        if (route) {
+          next[d.date] = route;
+          pendingRail.push({ date: d.date, stops: dayStops });
+        }
       } catch {
         // 路線服務失敗時以直線顯示
       }
     }));
-    if (seq === routeSeq) routes.value = next; // 只採用最新一次的結果
+    if (seq !== routeSeq) return;
+    routes.value = next;
+    for (const item of pendingRail) {
+      upgradeRailLegs(item.stops, mode, (index, leg) => {
+        if (seq !== routeSeq) return;
+        const current = routes.value[item.date];
+        if (!current?.legs?.[index]) return;
+        const legs = current.legs.slice();
+        legs[index] = leg;
+        const lines = current.lines.map((line) => (line.segIndex === index ? { ...line, coords: leg.coords } : line));
+        routes.value = { ...routes.value, [item.date]: { lines, legs } };
+      });
+    }
   } finally {
     if (seq === routeSeq) routing.value = false;
   }
@@ -435,16 +532,23 @@ watch(routeKey, () => {
 });
 
 /* ---- 路段交通方式 ---- */
+const roadModes = TRAVEL_MODES.filter((m) => m.kind === 'road');
+const railModes = TRAVEL_MODES.filter((m) => m.kind === 'rail');
+const lineMode = TRAVEL_MODES.find((m) => m.kind === 'line');
 // 第 index 段：第 index 個地點 → 第 index+1 個地點（交通方式記在抵達的地點上）
-const segMode = (g, index) => travelModeInfo(g.stops[index + 1].arriveMode || trip.value.travelMode);
-function segLabel(g, index) {
-  const info = segMode(g, index);
+function seg(g, index) {
+  const info = travelModeInfo(g.stops[index + 1].arriveMode || trip.value.travelMode);
+  const custom = !!g.stops[index + 1].arriveMode;
   const leg = g.legs?.[index];
   const straight = fmtDistance(distanceKm(g.stops[index], g.stops[index + 1]));
-  if (!leg || info.kind === 'line') return `${info.label}・${straight}`;
-  if (leg.failed) return `${info.label}・直線 ${straight}（無法規劃路線）`;
-  if (info.kind === 'rail') return `${info.label} 約 ${fmtDuration(leg.duration)}・直線 ${straight}`;
-  return `${fmtDuration(leg.duration)}・${fmtDistance(leg.distance)}`;
+  if (!leg) return { info, custom, detail: '計算路線中…', failed: false };
+  if (info.kind === 'line') return { info, custom, detail: `直線 ${straight}`, failed: false };
+  if (leg.failed) return { info, custom, detail: `無法規劃道路，改顯示直線 ${straight}`, failed: true };
+  if (info.kind === 'rail') {
+    const dist = leg.alongTrack ? `軌道 ${fmtDistance(leg.distance)}` : `直線 ${straight}`;
+    return { info, custom, detail: `約 ${fmtDuration(leg.duration)} · ${dist}`, failed: false };
+  }
+  return { info, custom, detail: `${fmtDuration(leg.duration)} · ${fmtDistance(leg.distance)}`, failed: false };
 }
 function setArriveMode(stop, mode) {
   if ((stop.arriveMode || null) === mode) return;
@@ -466,6 +570,8 @@ async function setTravelMode(mode) {
 const defaultDate = () => (selectedDate.value && selectedDate.value !== 'unscheduled' ? selectedDate.value : days.value[0]?.date ?? null);
 
 function openNewStop(place) {
+  results.value = null;
+  query.value = '';
   editing.value = {
     title: place.title, address: place.address, lat: place.lat, lng: place.lng, category: 'sight', date: defaultDate(),
   };

@@ -3,7 +3,8 @@
     <Transition name="fade">
       <div
         v-if="modelValue"
-        class="fixed inset-0 z-40 flex items-start justify-center bg-black/40 overflow-y-auto"
+        class="fixed inset-0 flex items-start justify-center bg-black/40 overflow-y-auto"
+        :style="{ zIndex }"
         :class="fullOnMobile ? 'p-0 sm:py-10 sm:px-4' : 'py-10 px-4'"
         @mousedown.self="onBackdrop"
       >
@@ -30,6 +31,12 @@
   </Teleport>
 </template>
 
+<script>
+// 同時開啟的對話框（確認框疊在編輯框上）。後開的在最上層，Esc 只關最上面那個。
+const modalStack = [];
+let modalSeq = 0;
+</script>
+
 <script setup>
 import { computed, onBeforeUnmount, watch } from 'vue';
 import Icon from './Icon.vue';
@@ -39,24 +46,39 @@ const props = defineProps({
   title: { type: String, default: '' },
   width: { type: String, default: '480px' },
   closeOnBackdrop: { type: Boolean, default: true },
+  zIndex: { type: Number, default: 40 },
 });
 const emit = defineEmits(['update:modelValue']);
+const id = ++modalSeq;
 // 較寬的對話框在手機上改為全螢幕
 const fullOnMobile = computed(() => parseInt(props.width, 10) > 480);
 
+function isTop() {
+  return modalStack[modalStack.length - 1] === id;
+}
 function onBackdrop() {
-  if (props.closeOnBackdrop) emit('update:modelValue', false);
+  if (props.closeOnBackdrop && isTop()) emit('update:modelValue', false);
 }
 function onKey(e) {
-  if (e.key === 'Escape' && !document.querySelector('.menu')) emit('update:modelValue', false);
+  if (e.key === 'Escape' && isTop() && !document.querySelector('.menu')) emit('update:modelValue', false);
 }
 watch(
   () => props.modelValue,
   (v) => {
-    if (v) document.addEventListener('keydown', onKey);
-    else document.removeEventListener('keydown', onKey);
+    const i = modalStack.lastIndexOf(id);
+    if (v) {
+      if (i === -1) modalStack.push(id);
+      document.addEventListener('keydown', onKey);
+    } else {
+      if (i !== -1) modalStack.splice(i, 1);
+      document.removeEventListener('keydown', onKey);
+    }
   },
   { immediate: true },
 );
-onBeforeUnmount(() => document.removeEventListener('keydown', onKey));
+onBeforeUnmount(() => {
+  const i = modalStack.lastIndexOf(id);
+  if (i !== -1) modalStack.splice(i, 1);
+  document.removeEventListener('keydown', onKey);
+});
 </script>

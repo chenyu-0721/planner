@@ -239,7 +239,10 @@ npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動
 左側選單「我的行程」是獨立的旅遊規劃功能，地圖鎖定在台灣範圍（含澎湖、金門、馬祖、蘭嶼、綠島）。
 
 1. **新增行程**：輸入名稱、開始與結束日期（最多 60 天）、色彩
-2. **加入地點**：在左上搜尋框輸入地名或地址，會即時出現台灣的地點建議（中文名稱與地址），點選即可加入
+2. **加入地點**：在左上搜尋框輸入，點選結果即可加入。搜尋框接受三種輸入：
+   - **地名或地址**：即時出現台灣的地點建議（中文名稱），行程附近的結果排在前面
+   - **Google 地圖連結**：在 Google 地圖找到地點後按「分享」→「複製連結」，貼上即可（支援 maps.app.goo.gl 短網址）。Google 地圖找得到的地方都能加入
+   - **座標**：例如 `25.0339, 121.5645`
 3. **編輯地點**：名稱、圖標（景點 / 美食 / 住宿 / 交通 / 購物 / 活動 / 其他）、日期、開始與結束時間、地址、預估花費、備註
 4. **排序**：
    - 拖曳清單中的地點可調整順序，或拖到另一天
@@ -253,7 +256,7 @@ npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動
 | 依時程連線 | 每天的地點依順序以該天顏色連線，跨天以虛線連接；圖標上的數字是當天順序 |
 | 交通方式 | 上方「路線」選行程預設（開車 / 機車 / 腳踏車 / 步行 / 直線）；**每一段都可個別設定**：點兩個地點之間的交通方式即可切換（例如台北→台中搭高鐵，之後改騎機車） |
 | 道路路線 | 開車、機車、腳踏車、步行會沿實際道路規劃，顯示每段與每天的距離、時間；**機車會避開國道** |
-| 高鐵 / 火車 | 以鐵路樣式的線連接兩站，**依直線距離估算時間**（高鐵約時速 165 公里、火車約 60 公里），並提供「查班次」連結到 Google 地圖查詢實際班次 |
+| 高鐵 / 火車 / 捷運 | **沿著地圖上的實際軌道**畫出路線（捷運會自動轉乘），依軌道長度估算時間（高鐵約時速 180 公里、火車約 80 公里、捷運約 34 公里），並提供「查班次」連結到 Google 地圖查詢實際班次 |
 | 底圖 | 右上角切換「地圖」（臺灣通用電子地圖）、「衛星」（正射影像）、「OSM」 |
 | 我的位置 | 右下角定位按鈕（需允許瀏覽器定位） |
 | Google 地圖導航 | 每天標題旁的 ↗ 會用 Google 地圖開啟當天路線（手機會開啟 Google 地圖 App） |
@@ -269,6 +272,7 @@ npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動
 | 臺灣通用電子地圖、正射影像 | 底圖 | [內政部國土測繪中心](https://maps.nlsc.gov.tw/)（政府資料開放授權） |
 | OpenStreetMap | 底圖 | [OpenStreetMap](https://www.openstreetmap.org/copyright) |
 | Photon | 地點搜尋建議（固定使用當地中文名稱） | [komoot](https://photon.komoot.io/) |
+| 鐵路軌道資料 | 高鐵、火車、捷運沿軌道的路線（預先產生的靜態檔，執行時不呼叫外部服務） | [OpenStreetMap](https://www.openstreetmap.org/copyright)（ODbL） |
 | OSRM | 開車、腳踏車、步行路線 | [FOSSGIS](https://routing.openstreetmap.de/) |
 | Valhalla | 機車路線（避開國道） | [FOSSGIS](https://valhalla1.openstreetmap.de/) |
 
@@ -320,6 +324,12 @@ npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動
 | `npm run reset-password -- <帳號> <新密碼>` | 重設本機 D1 的使用者密碼 |
 | `npm run reset-password -- <帳號> <新密碼> --remote` | 重設正式環境的使用者密碼 |
 | `npm run db:generate` | 修改 `src/db/schema.js` 後產生新的 migration SQL |
+
+在 `frontend/` 執行：
+
+| 指令 | 說明 |
+| --- | --- |
+| `npm run rail:update` | 重新產生全台鐵路軌道資料 `public/rail/taiwan-rail.json`（軌道很少變動，偶爾更新即可；免費的 Overpass 服務忙碌時會自動重試，可能需要數分鐘） |
 | `npx wrangler tail` | 即時查看正式環境的 log |
 
 ## 專案結構
@@ -329,6 +339,8 @@ planner/
 ├── package.json               根目錄快捷指令
 ├── frontend/                  Vue 3 前端
 │   ├── vite.config.js         build 輸出到 ../worker/public
+│   ├── public/rail/           全台鐵路軌道資料（OpenStreetMap，ODbL）
+│   ├── scripts/               產生軌道資料的腳本
 │   └── src/
 │       ├── views/             頁面（登入、我的一天、我的工作、我的計劃、計劃、使用者管理）
 │       ├── components/        卡片、工作詳細資料、各種選取器
