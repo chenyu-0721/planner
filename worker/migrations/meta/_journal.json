@@ -15,6 +15,13 @@
       "when": 1791782848609,
       "tag": "0001_seed_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791792923898,
+      "tag": "0002_trips",
+      "breakpoints": true
     }
   ]
 }

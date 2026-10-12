@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   sqliteTable, integer, text, real, primaryKey, uniqueIndex, index, check,
 } from 'drizzle-orm/sqlite-core';
-import { LIMITS } from '../lib/limits.js';
+import { LIMITS, STOP_CATEGORIES, TRAVEL_MODES } from '../lib/limits.js';
 
 // SQLite 不會檢查 VARCHAR 長度，所以用 CHECK 限制字數與可用值
 const maxLen = (name, column, max) => check(name, sql`length(${column}) <= ${sql.raw(String(max))}`);
@@ -163,4 +163,66 @@ export const myDayItems = sqliteTable('my_day_items', {
 }, (t) => [
   uniqueIndex('my_day_items_user_task_date').on(t.userId, t.taskId, t.date),
   index('my_day_items_task').on(t.taskId),
+]);
+
+/* ---------- 行程 ---------- */
+
+export const trips = sqliteTable('trips', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  description: text('description'),
+  startDate: text('start_date').notNull(), // YYYY-MM-DD
+  endDate: text('end_date').notNull(),
+  color: integer('color').notNull().default(0),
+  travelMode: text('travel_mode').notNull().default('car'), // 路線：car / bike / foot / straight（直線）
+  ownerId: integer('owner_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  oneOf('trips_travel_mode', t.travelMode, TRAVEL_MODES),
+  maxLen('trips_name_len', t.name, LIMITS.tripName),
+  maxLen('trips_description_len', t.description, LIMITS.tripDescription),
+  check('trips_date_range', sql`${t.endDate} >= ${t.startDate}`),
+  check('trips_color_range', sql`${t.color} between 0 and 255`),
+]);
+
+export const tripMembers = sqliteTable('trip_members', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  tripId: integer('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: text('role').notNull().default('member'),
+  lastViewedAt: text('last_viewed_at'),
+  createdAt: createdAt(),
+}, (t) => [
+  uniqueIndex('trip_members_trip_user').on(t.tripId, t.userId),
+  index('trip_members_user').on(t.userId),
+  oneOf('trip_members_role', t.role, ['owner', 'member']),
+]);
+
+// 行程中的地點；date 為空代表「尚未排入日期」
+export const tripStops = sqliteTable('trip_stops', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  tripId: integer('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
+  date: text('date'), // YYYY-MM-DD
+  startTime: text('start_time'), // HH:MM
+  endTime: text('end_time'),
+  title: text('title').notNull(),
+  category: text('category').notNull().default('sight'),
+  lat: real('lat').notNull(),
+  lng: real('lng').notNull(),
+  address: text('address'),
+  notes: text('notes'),
+  cost: real('cost'),
+  sortOrder: real('sort_order').notNull().default(0),
+  createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('trip_stops_trip').on(t.tripId),
+  maxLen('trip_stops_title_len', t.title, LIMITS.stopTitle),
+  maxLen('trip_stops_address_len', t.address, LIMITS.stopAddress),
+  maxLen('trip_stops_notes_len', t.notes, LIMITS.stopNotes),
+  oneOf('trip_stops_category', t.category, STOP_CATEGORIES),
+  check('trip_stops_lat', sql`${t.lat} between -90 and 90`),
+  check('trip_stops_lng', sql`${t.lng} between -180 and 180`),
 ]);
