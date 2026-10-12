@@ -5,7 +5,7 @@ import { HttpError } from '../lib/errors.js';
 import { getDb, safeUser } from '../lib/helpers.js';
 import { verifyPassword, hashIterations } from '../lib/password.js';
 import {
-  signToken, requireAuth, hashPassword, passwordIterations,
+  signToken, requireAuth, hashPassword, passwordIterations, forgetUser,
 } from '../lib/auth.js';
 import { LIMITS, requireText, optionalText, checkPassword } from '../lib/limits.js';
 
@@ -37,6 +37,7 @@ router.put('/me', requireAuth, async (c) => {
   const user = Object.keys(patch).length
     ? await db.update(users).set(patch).where(eq(users.id, c.get('user').id)).returning().get()
     : c.get('user');
+  forgetUser(user.id);
   return c.json(safeUser(user));
 });
 
@@ -46,6 +47,7 @@ router.put('/me/password', requireAuth, async (c) => {
   if (!(await verifyPassword(currentPassword || '', me.passwordHash))) throw new HttpError(400, '目前密碼不正確');
   const passwordHash = await hashPassword(c, checkPassword(newPassword));
   await getDb(c).update(users).set({ passwordHash }).where(eq(users.id, me.id));
+  forgetUser(me.id);
   return c.json({ ok: true });
 });
 

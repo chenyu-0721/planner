@@ -3,7 +3,9 @@ import { eq, asc } from 'drizzle-orm';
 import { users } from '../db/schema.js';
 import { HttpError } from '../lib/errors.js';
 import { getDb, safeUser, toId } from '../lib/helpers.js';
-import { requireAuth, requireAdmin, hashPassword } from '../lib/auth.js';
+import {
+  requireAuth, requireAdmin, hashPassword, forgetUser,
+} from '../lib/auth.js';
 import {
   LIMITS, USERNAME_RE, requireText, optionalText, checkPassword,
 } from '../lib/limits.js';
@@ -69,6 +71,7 @@ router.put('/:id', requireAdmin, async (c) => {
   const updated = Object.keys(patch).length
     ? await db.update(users).set(patch).where(eq(users.id, id)).returning().get()
     : user;
+  forgetUser(id);
   return c.json(safeUser(updated));
 });
 
@@ -77,6 +80,7 @@ router.delete('/:id', requireAdmin, async (c) => {
   if (id === c.get('user').id) throw new HttpError(400, '不能刪除自己');
   const deleted = await getDb(c).delete(users).where(eq(users.id, id)).returning({ id: users.id }).get();
   if (!deleted) throw new HttpError(404, '找不到使用者');
+  forgetUser(id);
   return c.json({ ok: true });
 });
 

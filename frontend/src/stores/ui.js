@@ -39,8 +39,9 @@ export const useUiStore = defineStore('ui', {
       this.navCollapsed = !this.navCollapsed;
       localStorage.setItem('planner_nav', this.navCollapsed ? '1' : '0');
     },
+    // initial：卡片上已有的資料，讓詳細資料視窗可以立即顯示
     openTask(task) {
-      this.detail = { taskId: task.id, planId: task.planId };
+      this.detail = { taskId: task.id, planId: task.planId, initial: task.title ? task : null };
     },
     closeTask() {
       this.detail = null;

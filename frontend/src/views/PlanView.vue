@@ -162,7 +162,6 @@ const vFocus = { mounted: (el) => { el.focus(); el.select(); } };
 
 (async () => {
   try {
-    planStore.plan = null;
     await planStore.load(planId);
     if (route.query.task) ui.openTask({ id: Number(route.query.task), planId });
   } catch (e) {

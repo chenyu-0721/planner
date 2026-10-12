@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
 import {
-  and, eq, inArray, desc, max,
+  and, eq, inArray, desc, sql,
 } from 'drizzle-orm';
 import {
   buckets, planMembers, taskAssignees, checklistItems, attachments, comments, myDayItems, users, tasks,
 } from '../db/schema.js';
 import { HttpError } from '../lib/errors.js';
 import {
-  getDb, toId, nowIso, today, loadTaskWithAccess, loadTaskSummary, deleteStoredFiles, fileUploadEnabled,
+  getDb, toId, nowIso, today, loadTaskWithAccess, deleteStoredFiles, fileUploadEnabled,
+  runBatch, taskAccessQuery, checkTaskAccess, taskSummaryQueries, buildTaskSummaries, alias,
 } from '../lib/helpers.js';
 import { requireAuth } from '../lib/auth.js';
 import {
@@ -36,28 +37,44 @@ const commentJson = (row) => ({
   user: row.user?.id ? row.user : null,
 });
 
-// 工作詳細資料（含意見）
+// 工作詳細資料（含意見）：權限、工作、附屬資料與意見一次送出
 router.get('/:id', async (c) => {
-  const task = await loadTaskWithAccess(c, c.req.param('id'));
-  const [summary, rows] = await Promise.all([
-    loadTaskSummary(c, task.id),
-    getDb(c).select({
+  const id = toId(c.req.param('id'));
+  const db = getDb(c);
+  const user = c.get('user');
+  const r = await runBatch(db, {
+    access: taskAccessQuery(db, id, user.id),
+    ...taskSummaryQueries(c, eq(tasks.id, id)),
+    commentList: db.select({
       id: comments.id,
       content: comments.content,
       createdAt: comments.createdAt,
       userId: comments.userId,
-      user: { id: users.id, displayName: users.displayName, color: users.color },
+      user: { id: alias(users.id, 'author_id'), displayName: users.displayName, color: users.color },
     }).from(comments).leftJoin(users, eq(users.id, comments.userId))
-      .where(eq(comments.taskId, task.id)).orderBy(desc(comments.createdAt), desc(comments.id)),
-  ]);
-  return c.json({ ...summary, comments: rows.map(commentJson) });
+      .where(eq(comments.taskId, id)).orderBy(desc(comments.createdAt), desc(comments.id)),
+  });
+  checkTaskAccess(user, r.access[0]);
+  return c.json({ ...buildTaskSummaries(r)[0], comments: r.commentList.map(commentJson) });
 });
 
 router.put('/:id', async (c) => {
-  const task = await loadTaskWithAccess(c, c.req.param('id'));
+  const id = toId(c.req.param('id'));
   const b = await c.req.json();
   const db = getDb(c);
   const user = c.get('user');
+  const assigneeIds = Array.isArray(b.assigneeIds) ? b.assigneeIds.slice(0, 50).map(Number).filter(Number.isInteger) : null;
+
+  // 第一趟：權限 +（需要時）可指派的成員
+  const pre = await runBatch(db, {
+    access: taskAccessQuery(db, id, user.id),
+    ...(assigneeIds?.length ? {
+      members: db.select({ userId: planMembers.userId }).from(planMembers)
+        .innerJoin(tasks, eq(tasks.planId, planMembers.planId))
+        .where(and(eq(tasks.id, id), inArray(planMembers.userId, assigneeIds))),
+    } : {}),
+  });
+  const task = checkTaskAccess(user, pre.access[0]);
   const patch = {};
 
   if (b.title !== undefined) patch.title = requireText(b.title, LIMITS.taskTitle, '工作名稱');
@@ -92,25 +109,21 @@ router.put('/:id', async (c) => {
     patch.labels = [...new Set((b.labels || []).map(Number).filter((n) => n >= 1 && n <= 25))].sort((x, y) => x - y);
   }
   if (b.bucketId !== undefined) {
-    const bucket = await db.select({ id: buckets.id }).from(buckets)
-      .where(and(eq(buckets.id, toId(b.bucketId)), eq(buckets.planId, task.planId))).get();
-    if (!bucket) throw new HttpError(400, '貯體不存在');
-    patch.bucketId = bucket.id;
+    // 只接受同一個計劃的貯體；不存在時維持原貯體（回傳的資料會反映實際結果）
+    patch.bucketId = sql`coalesce((select ${buckets.id} from ${buckets} where ${buckets.id} = ${toId(b.bucketId)} and ${buckets.planId} = ${task.planId}), ${tasks.bucketId})`;
   }
 
-  const statements = [];
-  if (Object.keys(patch).length) statements.push(db.update(tasks).set(patch).where(eq(tasks.id, task.id)));
-  if (Array.isArray(b.assigneeIds)) {
-    const ids = b.assigneeIds.slice(0, 50).map(Number);
-    const members = ids.length
-      ? await db.select({ userId: planMembers.userId }).from(planMembers)
-        .where(and(eq(planMembers.planId, task.planId), inArray(planMembers.userId, ids)))
-      : [];
-    statements.push(db.delete(taskAssignees).where(eq(taskAssignees.taskId, task.id)));
-    if (members.length) statements.push(db.insert(taskAssignees).values(members.map((m) => ({ taskId: task.id, userId: m.userId }))));
+  // 第二趟：更新 + 回傳最新的卡片資料
+  const writes = {};
+  if (Object.keys(patch).length) writes.update = db.update(tasks).set(patch).where(eq(tasks.id, id));
+  if (assigneeIds) {
+    writes.clearAssignees = db.delete(taskAssignees).where(eq(taskAssignees.taskId, id));
+    if (pre.members?.length) {
+      writes.assign = db.insert(taskAssignees).values(pre.members.map((m) => ({ taskId: id, userId: m.userId })));
+    }
   }
-  if (statements.length) await db.batch(statements);
-  return c.json(await loadTaskSummary(c, task.id));
+  const r = await runBatch(db, { ...writes, ...taskSummaryQueries(c, eq(tasks.id, id)) });
+  return c.json(buildTaskSummaries(r)[0]);
 });
 
 router.delete('/:id', async (c) => {
@@ -139,12 +152,10 @@ router.put('/:id/myday', async (c) => {
 router.post('/:id/checklist', async (c) => {
   const task = await loadTaskWithAccess(c, c.req.param('id'));
   const { title } = await c.req.json();
-  const db = getDb(c);
-  const row = await db.select({ v: max(checklistItems.sortOrder) }).from(checklistItems).where(eq(checklistItems.taskId, task.id)).get();
-  const item = await db.insert(checklistItems).values({
+  const item = await getDb(c).insert(checklistItems).values({
     taskId: task.id,
     title: requireText(title, LIMITS.checklistTitle, '檢查清單項目'),
-    sortOrder: (row?.v ?? 0) + 1,
+    sortOrder: sql`(select coalesce(max(${checklistItems.sortOrder}), 0) + 1 from ${checklistItems} where ${checklistItems.taskId} = ${task.id})`,
   }).returning().get();
   return c.json(item, 201);
 });

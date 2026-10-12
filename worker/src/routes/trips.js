@@ -7,7 +7,7 @@ import {
 } from '../db/schema.js';
 import { HttpError } from '../lib/errors.js';
 import {
-  getDb, safeUser, toId, nowIso,
+  getDb, safeUser, toId, nowIso, runBatch, alias,
 } from '../lib/helpers.js';
 import { requireAuth } from '../lib/auth.js';
 import {
@@ -29,16 +29,23 @@ function checkDateRange(startDate, endDate) {
   if (days + 1 > MAX_TRIP_DAYS) throw new HttpError(400, `行程最多 ${MAX_TRIP_DAYS} 天`);
 }
 
+// 行程與成員資格用一個 JOIN 查詢取得
+const tripAccessQuery = (db, tripId, userId) => db
+  .select({ trip: trips, memberId: alias(tripMembers.id, 'member_id') })
+  .from(trips)
+  .leftJoin(tripMembers, and(eq(tripMembers.tripId, trips.id), eq(tripMembers.userId, userId)))
+  .where(eq(trips.id, tripId));
+
+function checkTripAccess(user, row) {
+  if (!row) throw new HttpError(404, '找不到行程');
+  if (user.role !== 'admin' && !row.memberId) throw new HttpError(403, '你不是此行程的成員');
+  return row.trip;
+}
+
 async function assertTripAccess(c, tripId) {
-  const db = getDb(c);
   const user = c.get('user');
-  const trip = await db.select().from(trips).where(eq(trips.id, toId(tripId))).get();
-  if (!trip) throw new HttpError(404, '找不到行程');
-  if (user.role === 'admin') return trip;
-  const member = await db.select({ id: tripMembers.id }).from(tripMembers)
-    .where(and(eq(tripMembers.tripId, trip.id), eq(tripMembers.userId, user.id))).get();
-  if (!member) throw new HttpError(403, '你不是此行程的成員');
-  return trip;
+  const [row] = await tripAccessQuery(getDb(c), toId(tripId), user.id);
+  return checkTripAccess(user, row);
 }
 
 // 地點欄位驗證（create 時 partial = false）
@@ -99,15 +106,15 @@ router.get('/', async (c) => {
   const db = getDb(c);
   const user = c.get('user');
   const myTripIds = db.select({ id: tripMembers.tripId }).from(tripMembers).where(eq(tripMembers.userId, user.id));
-  const [rows, stopStats, memberStats] = await Promise.all([
-    db.select({ trip: trips, role: tripMembers.role, lastViewedAt: tripMembers.lastViewedAt })
+  const { rows, stopStats, memberStats } = await runBatch(db, {
+    rows: db.select({ trip: trips, role: tripMembers.role, lastViewedAt: tripMembers.lastViewedAt })
       .from(tripMembers).innerJoin(trips, eq(trips.id, tripMembers.tripId))
       .where(eq(tripMembers.userId, user.id)).orderBy(asc(trips.startDate)),
-    db.select({ tripId: tripStops.tripId, cnt: count() }).from(tripStops)
+    stopStats: db.select({ tripId: tripStops.tripId, cnt: count() }).from(tripStops)
       .where(inArray(tripStops.tripId, myTripIds)).groupBy(tripStops.tripId),
-    db.select({ tripId: tripMembers.tripId, cnt: count() }).from(tripMembers)
+    memberStats: db.select({ tripId: tripMembers.tripId, cnt: count() }).from(tripMembers)
       .where(inArray(tripMembers.tripId, myTripIds)).groupBy(tripMembers.tripId),
-  ]);
+  });
   const stopMap = new Map(stopStats.map((s) => [s.tripId, Number(s.cnt)]));
   const memberMap = new Map(memberStats.map((s) => [s.tripId, Number(s.cnt)]));
   return c.json(rows.map(({ trip, role, lastViewedAt }) => ({
@@ -138,27 +145,27 @@ router.post('/', async (c) => {
   return c.json(tripJson(trip), 201);
 });
 
-// 行程完整資料（成員、地點）
+// 行程完整資料（成員、地點）：權限與資料一次送出
 router.get('/:id', async (c) => {
-  const trip = await assertTripAccess(c, c.req.param('id'));
+  const tripId = toId(c.req.param('id'));
   const db = getDb(c);
   const user = c.get('user');
-  const [memberRows, stopRows] = await Promise.all([
-    db.select({ user: users, tripRole: tripMembers.role }).from(tripMembers)
+  const r = await runBatch(db, {
+    access: tripAccessQuery(db, tripId, user.id),
+    members: db.select({ user: users, tripRole: alias(tripMembers.role, 'trip_role') }).from(tripMembers)
       .innerJoin(users, eq(users.id, tripMembers.userId))
-      .where(eq(tripMembers.tripId, trip.id)).orderBy(asc(tripMembers.id)),
-    db.select().from(tripStops).where(eq(tripStops.tripId, trip.id))
+      .where(eq(tripMembers.tripId, tripId)).orderBy(asc(tripMembers.id)),
+    stops: db.select().from(tripStops).where(eq(tripStops.tripId, tripId))
       .orderBy(asc(tripStops.date), asc(tripStops.sortOrder), asc(tripStops.id)),
-  ]);
-  const isMember = memberRows.some((m) => m.user.id === user.id);
-  if (isMember) {
-    await db.update(tripMembers).set({ lastViewedAt: nowIso() })
-      .where(and(eq(tripMembers.tripId, trip.id), eq(tripMembers.userId, user.id)));
-  }
+    touch: db.update(tripMembers).set({ lastViewedAt: nowIso() })
+      .where(and(eq(tripMembers.tripId, tripId), eq(tripMembers.userId, user.id))),
+  });
+  const [access] = r.access;
+  const trip = checkTripAccess(user, access);
   return c.json({
-    trip: { ...tripJson(trip), isMember, canManage: canManage(user, trip) },
-    members: memberRows.map((m) => ({ ...safeUser(m.user), tripRole: m.tripRole })),
-    stops: stopRows.map(stopJson),
+    trip: { ...tripJson(trip), isMember: !!access.memberId, canManage: canManage(user, trip) },
+    members: r.members.map((m) => ({ ...safeUser(m.user), tripRole: m.tripRole })),
+    stops: r.stops.map(stopJson),
   });
 });
 

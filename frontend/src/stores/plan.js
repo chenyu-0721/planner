@@ -3,6 +3,11 @@ import api from '@/api';
 import { usePlansStore } from './plans';
 import { useUiStore } from './ui';
 
+// 看過的計劃暫存在記憶體：再次開啟時先立即顯示，背景再更新成最新資料
+const cache = new Map();
+const CACHE_LIMIT = 10;
+let loadSeq = 0;
+
 // 目前開啟的計劃（貯體、工作、成員）
 export const usePlanStore = defineStore('plan', {
   state: () => ({
@@ -18,17 +23,39 @@ export const usePlanStore = defineStore('plan', {
     sortedBuckets: (s) => [...s.buckets].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id),
   },
   actions: {
+    apply(data) {
+      this.plan = data.plan;
+      this.members = data.members;
+      this.buckets = data.buckets;
+      this.tasks = data.tasks;
+    },
+    remember() {
+      if (!this.plan) return;
+      cache.delete(this.plan.id);
+      cache.set(this.plan.id, {
+        plan: this.plan, members: this.members, buckets: this.buckets, tasks: this.tasks,
+      });
+      if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
+    },
     async load(id) {
-      this.loading = true;
+      const planId = Number(id);
+      const seq = ++loadSeq;
+      // 切換前把目前計劃（含尚未重新載入的修改）存起來
+      if (this.plan && this.plan.id !== planId) this.remember();
+      const cached = cache.get(planId);
+      if (cached) this.apply(cached);
+      this.loading = !cached;
       try {
-        const data = await api.get(`/plans/${id}`);
-        this.plan = data.plan;
-        this.members = data.members;
-        this.buckets = data.buckets;
-        this.tasks = data.tasks;
-        usePlansStore().patchLocal(data.plan.id, { lastViewedAt: new Date().toISOString() });
+        const data = await api.get(`/plans/${planId}`);
+        if (seq !== loadSeq) return; // 已切換到別的計劃
+        this.apply(data);
+        this.remember();
+        usePlansStore().patchLocal(planId, { lastViewedAt: new Date().toISOString() });
+      } catch (e) {
+        if (seq === loadSeq) cache.delete(planId);
+        throw e;
       } finally {
-        this.loading = false;
+        if (seq === loadSeq) this.loading = false;
       }
     },
     async ensure(id) {
@@ -48,6 +75,7 @@ export const usePlanStore = defineStore('plan', {
       const id = this.plan.id;
       await api.delete(`/plans/${id}`);
       usePlansStore().removeLocal(id);
+      cache.delete(id);
       this.plan = null;
     },
     async togglePin() {

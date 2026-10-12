@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/d1';
 import {
-  and, eq, inArray, count,
+  and, eq, inArray, count, sql,
 } from 'drizzle-orm';
 import * as schema from '../db/schema.js';
 import { HttpError } from './errors.js';
@@ -42,70 +42,108 @@ export const toId = (v) => {
   return n;
 };
 
-// 確認使用者可存取該計劃（成員或管理員）
-export async function assertPlanAccess(c, planId) {
-  const db = getDb(c);
-  const user = c.get('user');
-  const plan = await db.select().from(plans).where(eq(plans.id, toId(planId))).get();
-  if (!plan) throw new HttpError(404, '找不到計劃');
-  if (user.role === 'admin') return plan;
-  const member = await db.select({ id: planMembers.id }).from(planMembers)
-    .where(and(eq(planMembers.planId, plan.id), eq(planMembers.userId, user.id))).get();
-  if (!member) throw new HttpError(403, '你不是此計劃的成員');
-  return plan;
+/* ---------- 一次送出多個查詢 ----------
+ * D1 每次查詢都要經過網路來回；用 batch 把同一個請求需要的查詢合併成一趟
+ * named: { key: query }，回傳 { key: rows }
+ */
+export async function runBatch(db, named) {
+  const keys = Object.keys(named);
+  const results = await db.batch(keys.map((k) => named[k]));
+  return Object.fromEntries(keys.map((k, i) => [k, results[i]]));
 }
 
+/* ---------- 權限 ----------
+ * 計劃與成員資格用一個 JOIN 查詢取得（原本要兩趟）
+ * 注意：batch 中的 JOIN 若有同名欄位會互相覆蓋，重名欄位一律用 alias() 取別名
+ */
+export const alias = (column, name) => sql`${column}`.mapWith(column).as(name);
+
+export const planAccessQuery = (db, planId, userId) => db
+  .select({ plan: plans, memberId: alias(planMembers.id, 'member_id'), pinned: planMembers.pinned })
+  .from(plans)
+  .leftJoin(planMembers, and(eq(planMembers.planId, plans.id), eq(planMembers.userId, userId)))
+  .where(eq(plans.id, planId));
+
+export function checkPlanAccess(user, row) {
+  if (!row) throw new HttpError(404, '找不到計劃');
+  if (user.role !== 'admin' && !row.memberId) throw new HttpError(403, '你不是此計劃的成員');
+  return row.plan;
+}
+
+// 確認使用者可存取該計劃（成員或管理員）
+export async function assertPlanAccess(c, planId) {
+  const user = c.get('user');
+  const [row] = await planAccessQuery(getDb(c), toId(planId), user.id);
+  return checkPlanAccess(user, row);
+}
+
+export const taskAccessQuery = (db, taskId, userId) => db
+  .select({ task: tasks, memberId: alias(planMembers.id, 'member_id') })
+  .from(tasks)
+  .leftJoin(planMembers, and(eq(planMembers.planId, tasks.planId), eq(planMembers.userId, userId)))
+  .where(eq(tasks.id, taskId));
+
+export function checkTaskAccess(user, row) {
+  if (!row) throw new HttpError(404, '找不到工作');
+  if (user.role !== 'admin' && !row.memberId) throw new HttpError(403, '你不是此計劃的成員');
+  return row.task;
+}
+
+// 工作與權限一次查詢（原本要三趟）
 export async function loadTaskWithAccess(c, taskId) {
-  const task = await getDb(c).select().from(tasks).where(eq(tasks.id, toId(taskId))).get();
-  if (!task) throw new HttpError(404, '找不到工作');
-  await assertPlanAccess(c, task.planId);
-  return task;
+  const user = c.get('user');
+  const [row] = await taskAccessQuery(getDb(c), toId(taskId), user.id);
+  return checkTaskAccess(user, row);
 }
 
 // 使用者參與的計劃 id（子查詢，避免 D1 參數數量上限）
 export const myPlanIdsQuery = (db, userId) => db.select({ id: planMembers.planId }).from(planMembers).where(eq(planMembers.userId, userId));
 
+/* ---------- 工作摘要 ---------- */
+
 /**
- * 取得卡片需要的工作摘要
+ * 卡片需要的工作摘要所用的查詢（可和其他查詢放進同一個 batch）
  * @param where 工作的篩選條件
  * @param withPlanBucket 是否附上計劃與貯體名稱（我的工作 / 我的一天）
  */
-export async function loadTaskSummaries(c, where, { withPlanBucket = false } = {}) {
+export function taskSummaryQueries(c, where, { withPlanBucket = false, prefix = '' } = {}) {
   const db = getDb(c);
   const user = c.get('user');
-  const rows = await db.select().from(tasks).where(where).orderBy(tasks.sortOrder, tasks.id);
-  if (!rows.length) return [];
-
   const ids = db.select({ id: tasks.id }).from(tasks).where(where);
-  const [assignRows, checkRows, attRows, commentRows, myDayRows, planRows, bucketRows] = await Promise.all([
-    db.select().from(taskAssignees).where(inArray(taskAssignees.taskId, ids)),
-    db.select().from(checklistItems).where(inArray(checklistItems.taskId, ids)).orderBy(checklistItems.sortOrder, checklistItems.id),
-    db.select({
+  const q = {
+    tasks: db.select().from(tasks).where(where).orderBy(tasks.sortOrder, tasks.id),
+    assignees: db.select().from(taskAssignees).where(inArray(taskAssignees.taskId, ids)),
+    checklist: db.select().from(checklistItems).where(inArray(checklistItems.taskId, ids)).orderBy(checklistItems.sortOrder, checklistItems.id),
+    attachments: db.select({
       id: attachments.id, taskId: attachments.taskId, type: attachments.type, name: attachments.name, url: attachments.url, mimeType: attachments.mimeType,
     }).from(attachments).where(inArray(attachments.taskId, ids)).orderBy(attachments.id),
-    db.select({ taskId: comments.taskId, cnt: count() }).from(comments).where(inArray(comments.taskId, ids)).groupBy(comments.taskId),
-    db.select({ taskId: myDayItems.taskId }).from(myDayItems)
+    commentCounts: db.select({ taskId: comments.taskId, cnt: count() }).from(comments).where(inArray(comments.taskId, ids)).groupBy(comments.taskId),
+    myDay: db.select({ taskId: myDayItems.taskId }).from(myDayItems)
       .where(and(inArray(myDayItems.taskId, ids), eq(myDayItems.userId, user.id), eq(myDayItems.date, today(c)))),
-    withPlanBucket
-      ? db.select({
-        id: plans.id, name: plans.name, color: plans.color, labelNames: plans.labelNames,
-      }).from(plans).where(inArray(plans.id, db.select({ id: tasks.planId }).from(tasks).where(where)))
-      : [],
-    withPlanBucket
-      ? db.select({ id: buckets.id, name: buckets.name }).from(buckets).where(inArray(buckets.id, db.select({ id: tasks.bucketId }).from(tasks).where(where)))
-      : [],
-  ]);
+  };
+  if (withPlanBucket) {
+    q.plans = db.select({
+      id: plans.id, name: plans.name, color: plans.color, labelNames: plans.labelNames,
+    }).from(plans).where(inArray(plans.id, db.select({ id: tasks.planId }).from(tasks).where(where)));
+    q.buckets = db.select({ id: buckets.id, name: buckets.name }).from(buckets)
+      .where(inArray(buckets.id, db.select({ id: tasks.bucketId }).from(tasks).where(where)));
+  }
+  return Object.fromEntries(Object.entries(q).map(([k, v]) => [prefix + k, v]));
+}
 
-  const group = (list, key = 'taskId') => list.reduce((m, r) => (m.get(r[key])?.push(r) ?? m.set(r[key], [r]), m), new Map());
-  const assignMap = group(assignRows);
-  const checkMap = group(checkRows);
-  const attMap = group(attRows);
-  const commentMap = new Map(commentRows.map((r) => [r.taskId, Number(r.cnt)]));
-  const myDaySet = new Set(myDayRows.map((r) => r.taskId));
-  const planMap = new Map(planRows.map((p) => [p.id, p]));
-  const bucketMap = new Map(bucketRows.map((b) => [b.id, b]));
+// 把 taskSummaryQueries 的結果組成卡片資料
+export function buildTaskSummaries(r, { withPlanBucket = false, prefix = '' } = {}) {
+  const get = (k) => r[prefix + k] || [];
+  const group = (list) => list.reduce((m, row) => (m.get(row.taskId)?.push(row) ?? m.set(row.taskId, [row]), m), new Map());
+  const assignMap = group(get('assignees'));
+  const checkMap = group(get('checklist'));
+  const attMap = group(get('attachments'));
+  const commentMap = new Map(get('commentCounts').map((row) => [row.taskId, Number(row.cnt)]));
+  const myDaySet = new Set(get('myDay').map((row) => row.taskId));
+  const planMap = new Map(get('plans').map((p) => [p.id, p]));
+  const bucketMap = new Map(get('buckets').map((b) => [b.id, b]));
 
-  return rows.map((t) => {
+  return get('tasks').map((t) => {
     const checklist = (checkMap.get(t.id) || []).map(({
       id, title, isChecked, sortOrder,
     }) => ({
@@ -142,6 +180,11 @@ export async function loadTaskSummaries(c, where, { withPlanBucket = false } = {
     }
     return data;
   });
+}
+
+export async function loadTaskSummaries(c, where, opts = {}) {
+  const r = await runBatch(getDb(c), taskSummaryQueries(c, where, opts));
+  return buildTaskSummaries(r, opts);
 }
 
 export async function loadTaskSummary(c, taskId) {

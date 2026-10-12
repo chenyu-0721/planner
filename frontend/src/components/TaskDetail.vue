@@ -2,8 +2,8 @@
   <Modal :model-value="!!ui.detail" width="700px" @update:model-value="close">
     <template v-if="task" #header>
       <div class="flex items-center gap-2 text-sm text-ink-3 min-w-0">
-        <PlanIcon :plan="planStore.plan" :size="20" />
-        <router-link :to="`/plans/${task.planId}`" class="truncate hover:underline" @click="close">{{ planStore.plan?.name }}</router-link>
+        <PlanIcon :plan="headerPlan" :size="20" />
+        <router-link :to="`/plans/${task.planId}`" class="truncate hover:underline" @click="close">{{ headerPlan?.name }}</router-link>
       </div>
     </template>
 
@@ -54,13 +54,13 @@
           <template #trigger>
             <button class="btn btn-ghost !px-2"><Icon name="user-plus" :size="16" />指派</button>
           </template>
-          <AssigneePicker :model-value="task.assigneeIds" :members="planStore.members" @update:model-value="(ids) => save({ assigneeIds: ids })" />
+          <AssigneePicker :model-value="task.assigneeIds" :members="planReady ? planStore.members : []" @update:model-value="(ids) => save({ assigneeIds: ids })" />
         </Popover>
       </div>
 
       <!-- 標籤 -->
       <div class="flex items-center flex-wrap gap-1.5 mb-5">
-        <LabelPill v-for="l in task.labels" :key="l" :id="l" :label-names="planStore.plan?.labelNames" removable
+        <LabelPill v-for="l in task.labels" :key="l" :id="l" :label-names="labelNames" removable
                    @remove="save({ labels: task.labels.filter((x) => x !== l) })" />
         <Popover>
           <template #trigger>
@@ -68,7 +68,7 @@
           </template>
           <LabelPicker
             :model-value="task.labels"
-            :label-names="planStore.plan?.labelNames"
+            :label-names="labelNames"
             @update:model-value="(ids) => save({ labels: ids })"
             @rename="renameLabel"
           />
@@ -79,8 +79,8 @@
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-4">
         <div class="col-span-2 sm:col-span-1">
           <label class="field-label">貯體</label>
-          <select class="input select" :value="task.bucketId" @change="save({ bucketId: Number($event.target.value) })">
-            <option v-for="b in planStore.sortedBuckets" :key="b.id" :value="b.id">{{ b.name }}</option>
+          <select class="input select" :value="task.bucketId" :disabled="!planReady" @change="save({ bucketId: Number($event.target.value) })">
+            <option v-for="b in bucketOptions" :key="b.id" :value="b.id">{{ b.name }}</option>
           </select>
         </div>
         <div>
@@ -206,7 +206,8 @@
           </div>
         </div>
         <div class="mt-3 space-y-3">
-          <div v-for="c in task.comments" :key="c.id" class="group/cm flex gap-2.5">
+          <div v-if="!task.comments" class="text-xs text-ink-4">載入意見中…</div>
+          <div v-for="c in task.comments || []" :key="c.id" class="group/cm flex gap-2.5">
             <Avatar :user="c.user" :size="32" />
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 text-xs">
@@ -268,6 +269,15 @@ const userMap = computed(() => Object.fromEntries(plans.users.map((u) => [u.id, 
 const assignees = computed(() => (task.value?.assigneeIds || []).map((id) => planStore.memberMap[id] || userMap.value[id]).filter(Boolean));
 const sortedChecklist = computed(() => [...(task.value?.checklist || [])].sort(bySort));
 const checkedCount = computed(() => task.value?.checklist.filter((c) => c.isChecked).length || 0);
+// 計劃資料（成員、貯體、標籤名稱）是否已載入；從「我的工作」開啟時需要稍等
+const planReady = computed(() => !!task.value && planStore.plan?.id === task.value.planId);
+const headerPlan = computed(() => (planReady.value ? planStore.plan : task.value?.plan));
+const labelNames = computed(() => (planReady.value ? planStore.plan.labelNames : task.value?.plan?.labelNames) || {});
+const bucketOptions = computed(() => {
+  if (planReady.value) return planStore.sortedBuckets;
+  const b = task.value?.bucket || { id: task.value?.bucketId, name: '…' };
+  return [b];
+});
 const userName = (id) => planStore.memberMap[id]?.displayName || userMap.value[id]?.displayName || '使用者';
 
 watch(() => ui.detail, async (d) => {
@@ -278,13 +288,26 @@ watch(() => ui.detail, async (d) => {
     task.value = null;
     return;
   }
-  loading.value = true;
+  // 先用卡片上已有的資料立即顯示，意見等其他資料在背景載入
+  const initial = d.initial || planStore.tasks.find((t) => t.id === d.taskId);
+  if (initial) {
+    task.value = { ...JSON.parse(JSON.stringify(initial)), comments: null };
+    title.value = initial.title;
+    notes.value = initial.notes || '';
+    nextTick(autoGrow);
+  } else {
+    task.value = null;
+    loading.value = true;
+  }
   try {
-    await planStore.ensure(d.planId);
-    const data = await api.get(`/tasks/${d.taskId}`);
+    const [data] = await Promise.all([api.get(`/tasks/${d.taskId}`), planStore.ensure(d.planId)]);
+    if (ui.detail !== d) return; // 載入期間已關閉或切換到別的工作
+    // 使用者已經開始編輯的標題 / 附註不要被覆蓋
+    const titleUntouched = !task.value || title.value === task.value.title;
+    const notesUntouched = !task.value || notes.value === (task.value.notes || '');
     task.value = data;
-    title.value = data.title;
-    notes.value = data.notes;
+    if (titleUntouched) title.value = data.title;
+    if (notesUntouched) notes.value = data.notes;
     await nextTick();
     autoGrow();
   } catch (e) {
@@ -317,7 +340,7 @@ function syncCard() {
     ...t,
     checklistTotal: t.checklist.length,
     checklistDone: t.checklist.filter((c) => c.isChecked).length,
-    commentCount: t.comments.length,
+    commentCount: t.comments ? t.comments.length : t.commentCount,
   };
   delete summary.comments;
   planStore.upsertLocal(summary);
@@ -472,7 +495,7 @@ async function addComment() {
   if (!content) return;
   try {
     const c = await api.post(`/tasks/${task.value.id}/comments`, { content });
-    task.value.comments.unshift(c);
+    task.value.comments = [c, ...(task.value.comments || [])];
     newComment.value = '';
     syncCard();
   } catch (e) {
@@ -482,7 +505,7 @@ async function addComment() {
 async function removeComment(c) {
   try {
     await api.delete(`/tasks/${task.value.id}/comments/${c.id}`);
-    task.value.comments = task.value.comments.filter((x) => x.id !== c.id);
+    task.value.comments = (task.value.comments || []).filter((x) => x.id !== c.id);
     syncCard();
   } catch (e) {
     ui.error(e);

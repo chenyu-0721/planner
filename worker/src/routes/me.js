@@ -4,7 +4,7 @@ import {
 } from 'drizzle-orm';
 import { tasks, taskAssignees, myDayItems } from '../db/schema.js';
 import {
-  getDb, today, loadTaskSummaries, myPlanIdsQuery,
+  getDb, today, loadTaskSummaries, myPlanIdsQuery, runBatch, taskSummaryQueries, buildTaskSummaries,
 } from '../lib/helpers.js';
 import { requireAuth } from '../lib/auth.js';
 
@@ -31,17 +31,19 @@ router.get('/myday', async (c) => {
   const { id } = c.get('user');
   const date = today(c);
   const myPlans = myPlanIdsQuery(db, id);
-  const [dayTasks, suggestions] = await Promise.all([
-    loadTaskSummaries(c, and(inArray(tasks.id, inMyDayToday(db, id, date)), inArray(tasks.planId, myPlans)), { withPlanBucket: true }),
-    loadTaskSummaries(c, and(
+  const dayOpts = { withPlanBucket: true, prefix: 'd_' };
+  const sugOpts = { withPlanBucket: true, prefix: 's_' };
+  const r = await runBatch(db, {
+    ...taskSummaryQueries(c, and(inArray(tasks.id, inMyDayToday(db, id, date)), inArray(tasks.planId, myPlans)), dayOpts),
+    ...taskSummaryQueries(c, and(
       inArray(tasks.id, assignedToMe(db, id)),
       notInArray(tasks.id, inMyDayToday(db, id, date)),
       inArray(tasks.planId, myPlans),
       ne(tasks.progress, 100),
       lte(tasks.dueDate, date),
-    ), { withPlanBucket: true }),
-  ]);
-  return c.json({ date, tasks: dayTasks, suggestions });
+    ), sugOpts),
+  });
+  return c.json({ date, tasks: buildTaskSummaries(r, dayOpts), suggestions: buildTaskSummaries(r, sugOpts) });
 });
 
 export default router;
