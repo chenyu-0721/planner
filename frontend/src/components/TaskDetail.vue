@@ -18,7 +18,7 @@
           ref="titleEl"
           v-model="title"
           rows="1"
-          maxlength="255"
+          maxlength="200"
           class="flex-1 resize-none overflow-hidden text-xl font-semibold leading-7 px-2 py-1.5 rounded border border-transparent hover:border-line-2 focus:border-accent outline-none"
           :class="done ? 'line-through text-ink-3' : ''"
           @input="autoGrow"
@@ -121,7 +121,7 @@
             在卡片上顯示
           </label>
         </div>
-        <textarea v-model="notes" rows="4" class="input !h-auto py-2 resize-y min-h-20" placeholder="輸入描述或新增附註" @blur="saveNotes"></textarea>
+        <textarea v-model="notes" maxlength="10000" rows="4" class="input !h-auto py-2 resize-y min-h-20" placeholder="輸入描述或新增附註" @blur="saveNotes"></textarea>
       </div>
 
       <!-- 檢查清單 -->
@@ -143,6 +143,7 @@
                 class="flex-1 bg-transparent outline-none text-sm border-b border-transparent focus:border-accent"
                 :class="c.isChecked ? 'line-through text-ink-4' : ''"
                 :value="c.title"
+                maxlength="100"
                 @keydown.enter="$event.target.blur()"
                 @blur="($event.target.value.trim() && $event.target.value.trim() !== c.title) && updateItem(c, { title: $event.target.value.trim() })"
               />
@@ -153,7 +154,7 @@
         <div class="flex items-center gap-2 h-9 px-1">
           <span class="w-3"></span>
           <span class="size-4 rounded-full border border-ink-4 shrink-0"></span>
-          <input v-model="newItem" class="flex-1 outline-none text-sm border-b border-transparent focus:border-accent placeholder:text-ink-4" placeholder="新增項目" maxlength="255" @keydown.enter="addItem" />
+          <input v-model="newItem" class="flex-1 outline-none text-sm border-b border-transparent focus:border-accent placeholder:text-ink-4" placeholder="新增項目" maxlength="100" @keydown.enter="addItem" />
         </div>
       </div>
 
@@ -174,8 +175,8 @@
           </div>
         </div>
         <div v-if="linkForm" class="flex flex-col gap-2 p-3 rounded border border-line mb-2">
-          <input v-model="linkForm.url" v-focus class="input" placeholder="連結網址，例如 https://www.example.com" />
-          <input v-model="linkForm.name" class="input" placeholder="要顯示的文字（選用）" @keydown.enter="addLink" />
+          <input v-model="linkForm.url" v-focus maxlength="1000" class="input" placeholder="連結網址，例如 https://www.example.com" />
+          <input v-model="linkForm.name" maxlength="200" class="input" placeholder="要顯示的文字（選用）" @keydown.enter="addLink" />
           <div class="flex justify-end gap-2">
             <button class="btn btn-default" @click="linkForm = null">取消</button>
             <button class="btn btn-primary" :disabled="!linkForm.url.trim()" @click="addLink">儲存</button>
@@ -195,7 +196,7 @@
       <div>
         <label class="field-label">意見</label>
         <div class="rounded border border-line-2 focus-within:border-accent">
-          <textarea v-model="newComment" rows="2" class="w-full resize-none outline-none px-2.5 py-2 text-sm rounded" placeholder="在此輸入您的訊息" @keydown.ctrl.enter="addComment"></textarea>
+          <textarea v-model="newComment" maxlength="2000" rows="2" class="w-full resize-none outline-none px-2.5 py-2 text-sm rounded" placeholder="在此輸入您的訊息" @keydown.ctrl.enter="addComment"></textarea>
           <div class="flex justify-end px-2 pb-2">
             <button class="btn btn-primary !h-7" :disabled="!newComment.trim()" @click="addComment"><Icon name="send" :size="14" />傳送</button>
           </div>

@@ -12,12 +12,12 @@
           <PlanIcon :plan="{ name: form.name || '計劃', color: form.color }" :size="56" />
           <div class="flex-1">
             <label class="field-label">計劃名稱</label>
-            <input v-model="form.name" class="input" maxlength="150" />
+            <input v-model="form.name" class="input" maxlength="100" />
           </div>
         </div>
         <div>
           <label class="field-label">描述</label>
-          <textarea v-model="form.description" rows="3" class="input !h-auto py-1.5 resize-none"></textarea>
+          <textarea v-model="form.description" maxlength="500" rows="3" class="input !h-auto py-1.5 resize-none"></textarea>
         </div>
         <div>
           <label class="field-label">色彩</label>

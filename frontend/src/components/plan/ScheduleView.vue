@@ -54,7 +54,7 @@
                   <template #default="{ close }">
                     <div class="p-2 w-64">
                       <div class="text-xs text-ink-3 mb-1.5">到期日：{{ fmtLong(d) }}</div>
-                      <input v-focus class="input" placeholder="輸入工作名稱後按 Enter" maxlength="255" @keydown.enter="addTask($event, d, close)" />
+                      <input v-focus class="input" placeholder="輸入工作名稱後按 Enter" maxlength="200" @keydown.enter="addTask($event, d, close)" />
                     </div>
                   </template>
                 </Popover>

@@ -40,9 +40,13 @@ app.use((req, res, next) => {
 // 錯誤處理
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  const status = err.status || (err.code === 'LIMIT_FILE_SIZE' ? 400 : 500);
+  if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ message: '檔案不可超過 20MB' });
+  // 欄位驗證（例如超過長度上限）
+  if (err.name === 'SequelizeValidationError') return res.status(400).json({ message: err.errors[0]?.message || '資料格式不正確' });
+  if (err.parent?.code === 'ER_DATA_TOO_LONG') return res.status(400).json({ message: '輸入內容過長' });
+  const status = err.status || 500;
   if (status >= 500) console.error(err);
-  res.status(status).json({ message: err.code === 'LIMIT_FILE_SIZE' ? '檔案不可超過 20MB' : (status >= 500 ? '伺服器錯誤' : err.message) });
+  res.status(status).json({ message: status >= 500 ? '伺服器錯誤' : err.message });
 });
 
 (async () => {

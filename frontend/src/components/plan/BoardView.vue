@@ -28,7 +28,7 @@
                 v-model="bucketName"
                 v-focus
                 class="input flex-1 font-semibold"
-                maxlength="150"
+                maxlength="100"
                 @keydown.enter="saveBucketName(col)"
                 @keydown.esc="editingBucket = null"
                 @blur="saveBucketName(col)"
@@ -131,7 +131,7 @@
             v-focus
             class="input font-semibold"
             placeholder="輸入貯體名稱"
-            maxlength="150"
+            maxlength="100"
             @keydown.enter="addBucket"
             @keydown.esc="addingBucket = false"
             @blur="addBucket"

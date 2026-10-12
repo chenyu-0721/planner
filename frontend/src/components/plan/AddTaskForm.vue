@@ -5,7 +5,7 @@
       v-model="title"
       class="input"
       placeholder="輸入工作名稱"
-      maxlength="255"
+      maxlength="200"
       @keydown.enter.prevent="submit"
     />
     <div class="relative">

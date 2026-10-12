@@ -17,7 +17,7 @@
           v-model="newTitle"
           class="col-span-2 h-8 outline-none text-sm placeholder:text-accent focus:placeholder:text-ink-4"
           placeholder="新增工作"
-          maxlength="255"
+          maxlength="200"
           @keydown.enter="addTask"
         />
       </div>

@@ -5,12 +5,12 @@
         <PlanIcon :plan="{ name: name || '計劃', color }" :size="56" />
         <div class="flex-1">
           <label class="field-label">計劃名稱</label>
-          <input ref="nameEl" v-model="name" class="input" placeholder="為計劃命名" maxlength="150" />
+          <input ref="nameEl" v-model="name" class="input" placeholder="為計劃命名" maxlength="100" />
         </div>
       </div>
       <div>
         <label class="field-label">描述（選用）</label>
-        <textarea v-model="description" rows="3" class="input !h-auto py-1.5 resize-none" placeholder="這個計劃是關於什麼？"></textarea>
+        <textarea v-model="description" maxlength="500" rows="3" class="input !h-auto py-1.5 resize-none" placeholder="這個計劃是關於什麼？"></textarea>
       </div>
       <div>
         <label class="field-label">色彩</label>

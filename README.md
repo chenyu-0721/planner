@@ -275,6 +275,23 @@ planner/
         └── utils/
 ```
 
+## 資料表
+
+| 資料表 | 說明 | 主要欄位（長度上限） |
+| --- | --- | --- |
+| `users` | 使用者 | 帳號 50、顯示名稱 50、電子郵件 100、密碼雜湊 char(60) |
+| `plans` | 計劃 | 名稱 100、描述 500、標籤名稱（JSON）1500 |
+| `plan_members` | 計劃成員 | 角色（owner / member）、是否釘選 |
+| `buckets` | 貯體 | 名稱 100 |
+| `tasks` | 工作 | 名稱 200、附註 text（10000 字）、進度 / 優先順序 tinyint、標籤（JSON）80 |
+| `task_assignees` | 工作指派 | 主鍵 (task_id, user_id) |
+| `checklist_items` | 檢查清單 | 項目 100 |
+| `attachments` | 附件 | 名稱 200、網址 1000 |
+| `comments` | 意見 | 內容 2000 |
+| `my_day_items` | 我的一天 | 使用者、工作、日期 |
+
+欄位長度上限定義在 `backend/src/models/index.js` 的 `LIMITS`，超過時 API 會回傳 400 與錯誤訊息，前端輸入框也有相同的字數限制。修改 model 後執行 `npm run db:sync:alter`（在 `backend/`）同步資料表結構。
+
 ## 常見問題
 
 **啟動後連不上 / 顯示「資料庫連線失敗」**

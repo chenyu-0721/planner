@@ -20,11 +20,11 @@
         </div>
         <div>
           <label class="field-label">顯示名稱</label>
-          <input v-model="displayName" class="input" />
+          <input v-model="displayName" maxlength="50" class="input" />
         </div>
         <div>
           <label class="field-label">電子郵件</label>
-          <input v-model="email" class="input" />
+          <input v-model="email" maxlength="100" class="input" />
         </div>
       </div>
 

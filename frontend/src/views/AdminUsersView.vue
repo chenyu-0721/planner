@@ -62,15 +62,15 @@
       <div class="px-6 pb-2 space-y-3">
         <div>
           <label class="field-label">帳號</label>
-          <input v-model="form.username" class="input" :disabled="!!form.id" :class="form.id ? 'bg-hover' : ''" placeholder="3~50 個英文、數字或 _ . -" />
+          <input v-model="form.username" maxlength="50" class="input" :disabled="!!form.id" :class="form.id ? 'bg-hover' : ''" placeholder="3~50 個英文、數字或 _ . -" />
         </div>
         <div>
           <label class="field-label">顯示名稱</label>
-          <input v-model="form.displayName" class="input" />
+          <input v-model="form.displayName" maxlength="50" class="input" />
         </div>
         <div>
           <label class="field-label">電子郵件（選用）</label>
-          <input v-model="form.email" class="input" />
+          <input v-model="form.email" maxlength="100" class="input" />
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>

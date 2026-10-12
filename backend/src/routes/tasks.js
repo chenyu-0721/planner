@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const {
-  Bucket, PlanMember, TaskAssignee, ChecklistItem, Attachment, Comment, MyDayItem, User,
+  LIMITS, Bucket, PlanMember, TaskAssignee, ChecklistItem, Attachment, Comment, MyDayItem, User,
 } = require('../models');
 const {
   HttpError, today, loadTaskWithAccess, loadTaskSummary,
@@ -17,10 +17,17 @@ fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({
   storage: multer.diskStorage({
     destination: uploadDir,
-    filename: (req, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${path.extname(file.originalname)}`),
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${path.extname(file.originalname).slice(0, 10)}`),
   }),
   limits: { fileSize: 20 * 1024 * 1024 },
 });
+
+// 過長的名稱截斷（檔名保留副檔名）
+function clipName(name, max = LIMITS.attachmentName) {
+  if (name.length <= max) return name;
+  const ext = path.extname(name).slice(0, 10);
+  return name.slice(0, max - ext.length - 1) + '…' + ext;
+}
 
 const isDate = (v) => v === null || v === '' || /^\d{4}-\d{2}-\d{2}$/.test(v);
 
@@ -146,7 +153,7 @@ router.post('/:id/attachments', upload.single('file'), async (req, res) => {
     const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
     data = {
       type: 'file',
-      name: originalName,
+      name: clipName(originalName),
       url: `/uploads/${req.file.filename}`,
       mimeType: req.file.mimetype,
       size: req.file.size,
@@ -155,7 +162,7 @@ router.post('/:id/attachments', upload.single('file'), async (req, res) => {
     let url = String(req.body?.url || '').trim();
     if (!url) throw new HttpError(400, '請輸入連結網址');
     if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
-    data = { type: 'link', name: String(req.body?.name || '').trim() || url, url };
+    data = { type: 'link', name: clipName(String(req.body?.name || '').trim() || url), url };
   }
   const att = await Attachment.create({ ...data, taskId: task.id, createdById: req.user.id });
   res.status(201).json(att);

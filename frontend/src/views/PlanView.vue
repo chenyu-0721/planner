@@ -19,7 +19,7 @@
             v-model="nameDraft"
             v-focus
             class="input !h-8 text-lg font-semibold w-72"
-            maxlength="150"
+            maxlength="100"
             @keydown.enter="$event.target.blur()"
             @keydown.esc="editingName = false"
             @blur="saveName"

@@ -1,7 +1,7 @@
 const express = require('express');
 const { Op } = require('sequelize');
 const {
-  sequelize, Plan, PlanMember, Bucket, Task, TaskAssignee, User,
+  sequelize, LIMITS, Plan, PlanMember, Bucket, Task, TaskAssignee, User,
 } = require('../models');
 const {
   HttpError, assertPlanAccess, loadTaskSummaries, loadTaskSummary,
@@ -121,7 +121,12 @@ router.put('/:id', async (req, res) => {
   }
   if (description !== undefined) plan.description = description;
   if (color !== undefined) plan.color = Number(color) || 0;
-  if (labelNames !== undefined && typeof labelNames === 'object') plan.labelNames = labelNames;
+  if (labelNames !== undefined && typeof labelNames === 'object') {
+    // 只保留 1~25 號標籤，名稱最多 LIMITS.labelName 字
+    plan.labelNames = Object.fromEntries(Object.entries(labelNames)
+      .filter(([k, v]) => Number(k) >= 1 && Number(k) <= 25 && typeof v === 'string' && v.trim())
+      .map(([k, v]) => [k, v.trim().slice(0, LIMITS.labelName)]));
+  }
   await plan.save();
   res.json({
     id: plan.id, name: plan.name, description: plan.description, color: plan.color, labelNames: plan.labelNames,
