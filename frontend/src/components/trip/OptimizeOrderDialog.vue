@@ -25,7 +25,7 @@
         <ol class="rounded border border-line">
           <li v-for="(s, i) in ordered" :key="s.id" class="flex items-center gap-2 px-3 py-1.5 border-b border-line last:border-0">
             <span class="size-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0" :style="{ background: group.color }">{{ i + 1 }}</span>
-            <span class="flex-1 min-w-0 truncate text-sm">{{ categoryInfo(s.category).emoji }} {{ s.title }}</span>
+            <span class="flex-1 min-w-0 truncate text-sm">{{ stopCategory(s).emoji }} {{ s.title }}</span>
             <span v-if="moved(s, i)" class="text-[11px] text-accent shrink-0">原第 {{ group.stops.indexOf(s) + 1 }} 站</span>
           </li>
         </ol>
@@ -48,7 +48,7 @@
 import { computed, ref, watch } from 'vue';
 import Modal from '@/components/Modal.vue';
 import {
-  categoryInfo, travelModeInfo, travelMatrix, bestOrder, orderCost, fmtDuration,
+  stopCategory, travelModeInfo, travelMatrix, bestOrder, orderCost, fmtDuration,
 } from '@/utils/trip';
 
 const props = defineProps({

@@ -3,13 +3,14 @@ import {
   and, eq, asc, inArray, count, or, lt, gt, isNull, isNotNull, max,
 } from 'drizzle-orm';
 import {
-  trips, tripMembers, tripStops, users,
+  trips, tripMembers, tripStops, users, stopCategories,
 } from '../db/schema.js';
 import { HttpError } from '../lib/errors.js';
 import {
   getDb, safeUser, toId, nowIso, runBatch, alias,
 } from '../lib/helpers.js';
 import { requireAuth } from '../lib/auth.js';
+import { listCategories, categoryJson } from './stopCategories.js';
 import {
   LIMITS, STOP_CATEGORIES, MAX_TRIP_DAYS, TRAVEL_MODES, DEFAULT_TRAVEL_MODES, requireText, optionalText,
 } from '../lib/limits.js';
@@ -55,6 +56,15 @@ function moneyOrNull(value, label) {
   return v;
 }
 
+// 選了自訂圖標時，歸類（category）跟著該圖標
+async function applyCustomCategory(db, fields) {
+  if (!fields.customCategoryId) return;
+  const cat = await db.select({ base: stopCategories.baseCategory }).from(stopCategories)
+    .where(eq(stopCategories.id, fields.customCategoryId)).get();
+  if (!cat) throw new HttpError(400, '找不到這個自訂圖標，可能已被刪除');
+  fields.category = cat.base;
+}
+
 // 地點欄位驗證（create 時 partial = false）
 function stopFields(trip, b, partial) {
   const patch = {};
@@ -86,6 +96,7 @@ function stopFields(trip, b, partial) {
   if (has('notes')) patch.notes = optionalText(b.notes, LIMITS.stopNotes, '備註') || null;
   if (has('cost')) patch.cost = moneyOrNull(b.cost, '花費');
   if (has('arriveCost')) patch.arriveCost = moneyOrNull(b.arriveCost, '交通費');
+  if (has('customCategoryId')) patch.customCategoryId = b.customCategoryId == null ? null : toId(b.customCategoryId);
   if (has('arriveMode')) {
     if (b.arriveMode && !TRAVEL_MODES.includes(b.arriveMode)) throw new HttpError(400, '交通方式不正確');
     patch.arriveMode = b.arriveMode || null;
@@ -166,6 +177,7 @@ router.get('/:id', async (c) => {
       .where(eq(tripMembers.tripId, tripId)).orderBy(asc(tripMembers.id)),
     stops: db.select().from(tripStops).where(eq(tripStops.tripId, tripId))
       .orderBy(asc(tripStops.date), asc(tripStops.sortOrder), asc(tripStops.id)),
+    categories: listCategories(db),
     touch: db.update(tripMembers).set({ lastViewedAt: nowIso() })
       .where(and(eq(tripMembers.tripId, tripId), eq(tripMembers.userId, user.id))),
   });
@@ -175,6 +187,7 @@ router.get('/:id', async (c) => {
     trip: { ...tripJson(trip), isMember: !!access.memberId, canManage: canManage(user, trip) },
     members: r.members.map((m) => ({ ...safeUser(m.user), tripRole: m.tripRole })),
     stops: r.stops.map(stopJson),
+    categories: r.categories.map(categoryJson),
   });
 });
 
@@ -246,6 +259,7 @@ router.post('/:id/stops', async (c) => {
   const b = await c.req.json();
   const db = getDb(c);
   const fields = stopFields(trip, { date: null, ...b }, false);
+  await applyCustomCategory(db, fields);
   if (fields.sortOrder === undefined) {
     // 預設加到該天最後
     const row = await db.select({ v: max(tripStops.sortOrder) }).from(tripStops).where(and(
@@ -262,6 +276,7 @@ router.put('/:id/stops/:stopId', async (c) => {
   const trip = await assertTripAccess(c, c.req.param('id'));
   const patch = stopFields(trip, await c.req.json(), true);
   const db = getDb(c);
+  await applyCustomCategory(db, patch);
   const where = and(eq(tripStops.id, toId(c.req.param('stopId'))), eq(tripStops.tripId, trip.id));
   const stop = Object.keys(patch).length
     ? await db.update(tripStops).set(patch).where(where).returning().get()

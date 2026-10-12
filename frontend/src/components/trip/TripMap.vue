@@ -34,7 +34,7 @@ import 'leaflet/dist/leaflet.css';
 import Icon from '../Icon.vue';
 import { useUiStore } from '@/stores/ui';
 import {
-  categoryInfo, byStopOrder, UNSCHEDULED_COLOR, BASE_LAYERS, TAIWAN_BOUNDS, TAIWAN_CENTER, MIN_ZOOM, inTaiwan, travelModeInfo, fmtDuration,
+  stopCategory, customCategories, byStopOrder, UNSCHEDULED_COLOR, BASE_LAYERS, TAIWAN_BOUNDS, TAIWAN_CENTER, MIN_ZOOM, inTaiwan, travelModeInfo, fmtDuration,
 } from '@/utils/trip';
 
 const props = defineProps({
@@ -67,7 +67,7 @@ function pinIcon(stop, label, color) {
     className: 'trip-pin-wrap',
     html: `<div class="trip-pin" style="--pin:${color}">
       <span class="trip-pin-num">${label}</span>
-      <span class="trip-pin-emoji">${categoryInfo(stop.category).emoji}</span>
+      <span class="trip-pin-emoji">${stopCategory(stop).emoji}</span>
     </div>`,
     iconSize: [34, 44],
     iconAnchor: [17, 42],
@@ -248,6 +248,7 @@ onBeforeUnmount(() => {
 watch(() => props.stops, render, { deep: true });
 watch(() => props.routes, render);
 watch(() => props.days, render);
+watch(customCategories, render, { deep: true }); // 自訂圖標改了，地圖圖標跟著換
 watch(() => props.selectedDate, () => {
   render();
   fit();

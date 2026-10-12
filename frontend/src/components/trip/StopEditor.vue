@@ -14,10 +14,28 @@
             :key="c.key"
             type="button"
             class="flex items-center gap-1 h-8 px-2.5 rounded-full border text-sm cursor-pointer"
-            :class="form.category === c.key ? 'border-accent bg-accent-light text-accent font-semibold' : 'border-line-2 hover:bg-hover'"
-            @click="form.category = c.key"
+            :class="!form.customCategoryId && form.category === c.key ? 'border-accent bg-accent-light text-accent font-semibold' : 'border-line-2 hover:bg-hover'"
+            @click="pickBuiltIn(c.key)"
           >
             <span>{{ c.emoji }}</span>{{ c.label }}
+          </button>
+          <button
+            v-for="c in customCategories"
+            :key="`custom-${c.id}`"
+            type="button"
+            class="flex items-center gap-1 h-8 px-2.5 rounded-full border text-sm cursor-pointer"
+            :class="form.customCategoryId === c.id ? 'border-accent bg-accent-light text-accent font-semibold' : 'border-line-2 border-dashed hover:bg-hover'"
+            :title="`自訂圖標，歸類為「${categoryInfo(c.baseCategory).label}」`"
+            @click="pickCustom(c)"
+          >
+            <span>{{ c.emoji }}</span>{{ c.label }}
+          </button>
+          <button
+            type="button"
+            class="flex items-center gap-1 h-8 px-2.5 rounded-full border border-dashed border-line-2 text-sm text-accent cursor-pointer hover:bg-hover"
+            @click="managerOpen = true"
+          >
+            <Icon name="plus" :size="14" />{{ customCategories.length ? '自訂 / 管理' : '自訂圖標' }}
           </button>
         </div>
       </div>
@@ -81,13 +99,17 @@
       <button class="btn btn-primary" :disabled="saving" @click="save">{{ form.id ? '儲存' : '加入行程' }}</button>
     </template>
   </Modal>
+  <CategoryManager v-model="managerOpen" :base-category="form.category" @created="pickCustom" />
 </template>
 
 <script setup>
 import { nextTick, reactive, ref, watch } from 'vue';
 import Modal from '../Modal.vue';
 import Icon from '../Icon.vue';
-import { CATEGORIES, googlePlaceUrl, budgetGroupOf } from '@/utils/trip';
+import CategoryManager from './CategoryManager.vue';
+import {
+  CATEGORIES, categoryInfo, customCategories, googlePlaceUrl, budgetGroupOf,
+} from '@/utils/trip';
 
 const props = defineProps({
   modelValue: { type: Object, default: null }, // 編輯中的地點（新增時沒有 id）；focus: 'arriveCost' 時開啟後游標放在交通費
@@ -100,6 +122,17 @@ const form = reactive({});
 const error = ref('');
 const titleEl = ref(null);
 const arriveCostEl = ref(null);
+const managerOpen = ref(false);
+
+function pickBuiltIn(key) {
+  form.category = key;
+  form.customCategoryId = null;
+}
+// 自訂圖標：歸類跟著圖標設定
+function pickCustom(c) {
+  form.category = c.baseCategory;
+  form.customCategoryId = c.id;
+}
 
 watch(() => props.modelValue, async (v) => {
   if (!v) return;
@@ -108,6 +141,7 @@ watch(() => props.modelValue, async (v) => {
     id: v.id ?? null,
     title: v.title || '',
     category: v.category || 'sight',
+    customCategoryId: customCategories.some((c) => c.id === v.customCategoryId) ? v.customCategoryId : null,
     date: v.date ?? null,
     startTime: v.startTime || '',
     endTime: v.endTime || '',

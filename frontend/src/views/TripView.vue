@@ -208,7 +208,7 @@
                     </span>
                     <div class="min-w-0 flex-1">
                       <div class="flex items-center gap-1.5">
-                        <span class="text-sm">{{ categoryInfo(s.category).emoji }}</span>
+                        <span class="text-sm">{{ stopCategory(s).emoji }}</span>
                         <span class="text-sm font-semibold truncate">{{ s.title }}</span>
                       </div>
                       <div class="text-xs text-ink-3 flex flex-wrap gap-x-2">
@@ -358,7 +358,7 @@ import OptimizeOrderDialog from '@/components/trip/OptimizeOrderDialog.vue';
 import api from '@/api';
 import { sortOrderAt } from '@/utils/planner';
 import {
-  tripDays, fmtTripRange, categoryInfo, distanceKm, fmtDistance, fmtCost, byStopOrder,
+  tripDays, fmtTripRange, stopCategory, setCustomCategories, distanceKm, fmtDistance, fmtCost, byStopOrder,
   sortOrderForTime, searchPlaces, stopTotal, UNSCHEDULED_COLOR, inTaiwan,
   parseCoordinates, isGoogleMapsUrl, isShortGoogleUrl, placeFromGoogleUrl,
   TRAVEL_MODES, DEFAULT_TRAVEL_MODES, travelModeInfo, planDayRoute, upgradeRailLegs, fmtDuration, googleDirectionsUrl, googleSegmentUrl,
@@ -447,6 +447,7 @@ async function load() {
     trip.value = data.trip;
     members.value = data.members;
     stops.value = data.stops;
+    setCustomCategories(data.categories || []);
   } catch (e) {
     error.value = e.message;
   }
@@ -706,6 +707,7 @@ async function saveStop(form) {
   const payload = {
     title: form.title,
     category: form.category,
+    customCategoryId: form.customCategoryId,
     date: form.date,
     startTime: form.startTime,
     endTime: form.endTime,

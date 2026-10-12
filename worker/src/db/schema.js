@@ -201,6 +201,21 @@ export const tripMembers = sqliteTable('trip_members', {
   oneOf('trip_members_role', t.role, ['owner', 'member']),
 ]);
 
+// 自訂地點圖標（所有使用者共用）。base_category 決定預算歸類與預設停留時間，刪除後地點改用 base_category 的圖標
+export const stopCategories = sqliteTable('stop_categories', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  emoji: text('emoji').notNull(),
+  label: text('label').notNull(),
+  baseCategory: text('base_category').notNull().default('other'),
+  createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  maxLen('stop_categories_emoji_len', t.emoji, LIMITS.categoryEmoji),
+  maxLen('stop_categories_label_len', t.label, LIMITS.categoryLabel),
+  oneOf('stop_categories_base', t.baseCategory, STOP_CATEGORIES),
+]);
+
 // 行程中的地點；date 為空代表「尚未排入日期」
 export const tripStops = sqliteTable('trip_stops', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -216,6 +231,7 @@ export const tripStops = sqliteTable('trip_stops', {
   notes: text('notes'),
   cost: real('cost'),
   arriveMode: text('arrive_mode'), // 從前一個地點到這裡的交通方式；空值 = 使用行程預設（由 API 檢查可用值）
+  customCategoryId: integer('custom_category_id').references(() => stopCategories.id, { onDelete: 'set null' }), // 自訂圖標；空值 = 使用 category 的內建圖標
   arriveCost: real('arrive_cost'), // 從前一個地點到這裡的交通費（例如高鐵票），計入「交通」預算
   sortOrder: real('sort_order').notNull().default(0),
   createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),

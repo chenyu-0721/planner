@@ -1,3 +1,4 @@
+import { reactive } from 'vue';
 import { addDays, diffDays, parseDate, sortOrderAt } from './planner';
 import { cachedRailRoute, fetchRailRoute } from './railRoute';
 
@@ -12,6 +13,17 @@ export const CATEGORIES = [
   { key: 'other', label: '其他', emoji: '📌' },
 ];
 export const categoryInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[0];
+
+// 自訂圖標（所有使用者共用，隨行程資料一起載入）
+export const customCategories = reactive([]);
+export function setCustomCategories(list) {
+  customCategories.splice(0, customCategories.length, ...list);
+}
+/** 地點實際顯示的圖標：有自訂圖標用自訂，否則用內建類別 */
+export function stopCategory(stop) {
+  const c = stop.customCategoryId ? customCategories.find((x) => x.id === stop.customCategoryId) : null;
+  return c ? { key: `custom-${c.id}`, label: c.label, emoji: c.emoji } : categoryInfo(stop.category);
+}
 
 // 每天的路線顏色
 export const DAY_COLORS = ['#0f6cbd', '#c239b3', '#ca5010', '#107c10', '#8764b8', '#038387', '#d13438', '#986f0b', '#004e8c', '#e3008c'];
@@ -653,7 +665,7 @@ export function computeBudget(stops, days) {
     if (s.cost) {
       const g = byKey[budgetGroupOf(s.category).key];
       g.amount += s.cost;
-      g.items.push({ id: s.id, label: `${categoryInfo(s.category).emoji} ${s.title}`, sub: when, amount: s.cost });
+      g.items.push({ id: s.id, label: `${stopCategory(s).emoji} ${s.title}`, sub: when, amount: s.cost });
     }
     if (s.arriveCost) {
       const prev = ordered[i - 1];

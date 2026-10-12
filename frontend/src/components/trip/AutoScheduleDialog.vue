@@ -45,7 +45,7 @@
             </div>
             <div class="flex items-center gap-2 px-3 py-1.5">
               <span class="size-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0" :style="{ background: group.color }">{{ i + 1 }}</span>
-              <span class="flex-1 min-w-0 truncate text-sm">{{ categoryInfo(r.stop.category).emoji }} {{ r.stop.title }}</span>
+              <span class="flex-1 min-w-0 truncate text-sm">{{ stopCategory(r.stop).emoji }} {{ r.stop.title }}</span>
               <span v-if="r.overflow" class="text-xs text-[#c50f1f] shrink-0">超過當天，不排時間</span>
               <span v-else class="text-sm tabular-nums shrink-0" :class="changed(r) ? 'font-semibold text-accent' : 'text-ink-2'">
                 {{ r.startTime }}<template v-if="r.endTime">–{{ r.endTime }}</template>
@@ -68,7 +68,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import Modal from '@/components/Modal.vue';
 import {
-  CATEGORIES, DEFAULT_STAY, categoryInfo, planSchedule, travelModeInfo,
+  CATEGORIES, DEFAULT_STAY, stopCategory, planSchedule, travelModeInfo,
 } from '@/utils/trip';
 
 const props = defineProps({

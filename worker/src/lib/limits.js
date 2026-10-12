@@ -21,7 +21,10 @@ export const LIMITS = {
   stopTitle: 100,
   stopAddress: 200,
   stopNotes: 1000,
+  categoryEmoji: 16, // 一個 emoji 可能由多個字元組成（例如國旗、膚色）
+  categoryLabel: 20,
 };
+export const MAX_CUSTOM_CATEGORIES = 60;
 
 export const USERNAME_RE = /^[A-Za-z0-9_.-]{3,50}$/;
 export const MIN_PASSWORD = 6;
