@@ -1,21 +1,27 @@
 <template>
-  <div class="flex-1 min-h-0 overflow-auto thin-scroll px-6 py-4">
-    <div class="bg-white rounded-md card-shadow min-w-[1080px]">
+  <div class="flex-1 min-h-0 overflow-auto thin-scroll px-3 sm:px-6 py-3 sm:py-4">
+    <div class="bg-white rounded-md card-shadow min-w-[1010px]">
       <!-- 表頭 -->
       <div :class="rowGrid" class="h-10 text-xs font-semibold text-ink-3 border-b border-line sticky top-0 bg-white z-10 rounded-t-md">
-        <div></div>
-        <button v-for="c in cols" :key="c.key" class="flex items-center gap-1 h-full text-left hover:text-ink cursor-pointer" @click="sortBy(c.key)">
+        <div class="sticky left-0 z-[2] bg-inherit h-full rounded-tl-md"></div>
+        <button
+          v-for="c in cols"
+          :key="c.key"
+          class="flex items-center gap-1 h-full text-left hover:text-ink cursor-pointer"
+          :class="c.key === 'title' ? 'sticky left-[44px] z-[2] bg-inherit' : ''"
+          @click="sortBy(c.key)"
+        >
           {{ c.label }}
           <Icon v-if="sort.key === c.key" :name="sort.dir === 1 ? 'chevron-up' : 'chevron-down'" :size="12" />
         </button>
       </div>
 
       <!-- 新增工作 -->
-      <div :class="rowGrid" class="h-11 border-b border-line">
-        <div class="flex justify-center text-accent"><Icon name="plus" :size="16" /></div>
+      <div :class="rowGrid" class="h-11 border-b border-line bg-white">
+        <div class="sticky left-0 z-[1] bg-inherit h-full flex items-center justify-center text-accent"><Icon name="plus" :size="16" /></div>
         <input
           v-model="newTitle"
-          class="col-span-2 h-8 outline-none text-sm placeholder:text-accent focus:placeholder:text-ink-4"
+          class="sticky left-[44px] z-[1] bg-inherit col-span-2 h-8 outline-none text-sm placeholder:text-accent focus:placeholder:text-ink-4"
           placeholder="新增工作"
           maxlength="200"
           @keydown.enter="addTask"
@@ -28,13 +34,13 @@
         v-for="t in sorted"
         :key="t.id"
         :class="rowGrid"
-        class="group h-11 border-b border-line last:border-0 hover:bg-[#fafafa] text-sm"
+        class="group h-11 border-b border-line last:border-0 bg-white hover:bg-[#fafafa] text-sm"
       >
-        <button class="flex justify-center cursor-pointer" :title="t.progress === 100 ? '標示為未完成' : '標示為完成'" @click="update(t, { progress: t.progress === 100 ? 0 : 100 })">
+        <button class="sticky left-0 z-[1] bg-inherit h-full flex items-center justify-center cursor-pointer" :title="t.progress === 100 ? '標示為未完成' : '標示為完成'" @click="update(t, { progress: t.progress === 100 ? 0 : 100 })">
           <ProgressIcon :value="t.progress === 100 ? 100 : 0" :size="18" />
         </button>
 
-        <div class="flex items-center gap-2 min-w-0 pr-3">
+        <div class="sticky left-[44px] z-[1] bg-inherit h-full flex items-center gap-2 min-w-0 pr-3 border-r border-line sm:border-r-0">
           <button class="truncate text-left hover:underline cursor-pointer" :class="t.progress === 100 ? 'line-through text-ink-3' : 'text-ink'" @click="ui.openTask(t)">
             {{ t.title }}
           </button>
@@ -54,7 +60,7 @@
                 </div>
                 <span v-if="t.assigneeIds.length === 1" class="truncate text-ink-2">{{ planStore.memberMap[t.assigneeIds[0]]?.displayName }}</span>
               </template>
-              <span v-else class="text-ink-4 opacity-0 group-hover:opacity-100 flex items-center gap-1"><Icon name="user-plus" :size="14" />指派</span>
+              <span v-else class="text-ink-4 touch-show opacity-0 group-hover:opacity-100 flex items-center gap-1"><Icon name="user-plus" :size="14" />指派</span>
             </button>
           </template>
           <AssigneePicker :model-value="t.assigneeIds" :members="planStore.members" @update:model-value="(ids) => update(t, { assigneeIds: ids })" />
@@ -88,7 +94,7 @@
                 <LabelPill v-for="l in t.labels.slice(0, 2)" :key="l" :id="l" :label-names="planStore.plan?.labelNames" />
                 <span v-if="t.labels.length > 2" class="text-xs text-ink-3">+{{ t.labels.length - 2 }}</span>
               </template>
-              <span v-else class="text-ink-4 opacity-0 group-hover:opacity-100 flex items-center gap-1"><Icon name="tag" :size="14" />新增</span>
+              <span v-else class="text-ink-4 touch-show opacity-0 group-hover:opacity-100 flex items-center gap-1"><Icon name="tag" :size="14" />新增</span>
             </button>
           </template>
           <LabelPicker :model-value="t.labels" :label-names="planStore.plan?.labelNames" @update:model-value="(ids) => update(t, { labels: ids })" @rename="renameLabel" />
@@ -116,7 +122,7 @@ const props = defineProps({ tasks: { type: Array, required: true } });
 const planStore = usePlanStore();
 const ui = useUiStore();
 
-const rowGrid = 'grid grid-cols-[44px_minmax(240px,2.4fr)_minmax(140px,1.2fr)_130px_130px_minmax(120px,1fr)_120px_100px_minmax(140px,1fr)] items-center pr-3';
+const rowGrid = 'grid grid-cols-[44px_minmax(170px,2.4fr)_minmax(140px,1.2fr)_130px_130px_minmax(120px,1fr)_120px_100px_minmax(140px,1fr)] items-center pr-3';
 const cols = [
   { key: 'title', label: '工作名稱' },
   { key: 'assignee', label: '指派對象' },

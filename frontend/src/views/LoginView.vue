@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-full flex items-center justify-center bg-[#f3f2f1] px-4"
        style="background-image: radial-gradient(circle at 15% 20%, #dff0de 0, transparent 40%), radial-gradient(circle at 85% 80%, #dbe9f7 0, transparent 45%);">
-    <div class="w-full max-w-[440px] bg-white card-shadow-hover px-11 py-10">
+    <div class="w-full max-w-[440px] bg-white card-shadow-hover px-6 py-8 sm:px-11 sm:py-10">
       <div class="flex items-center gap-2.5 mb-6">
         <img src="/favicon.svg" class="size-8" alt="" />
         <span class="text-xl font-semibold text-ink-2">Planner</span>

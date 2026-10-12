@@ -1,10 +1,11 @@
 <template>
-  <div class="flex-1 min-h-0 flex">
-    <div class="flex-1 min-w-0 overflow-y-auto thin-scroll">
-      <div class="max-w-[960px] mx-auto px-8 py-6">
+  <!-- 寬螢幕：建議在右側；手機 / 平板：建議在下方，整頁捲動 -->
+  <div class="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden thin-scroll">
+    <div class="lg:flex-1 min-w-0 lg:overflow-y-auto thin-scroll">
+      <div class="max-w-[960px] mx-auto px-4 sm:px-8 py-4 sm:py-6">
         <div class="flex items-center gap-3 mb-1">
           <Icon name="sun" :size="28" class="text-[#ca5010]" />
-          <h1 class="text-2xl font-semibold">我的一天</h1>
+          <h1 class="text-xl sm:text-2xl font-semibold">我的一天</h1>
         </div>
         <p class="text-sm text-ink-3 mb-6 ml-10">{{ fmtLong(date) }}</p>
 
@@ -19,7 +20,7 @@
               </g>
             </svg>
             <div class="text-lg font-semibold mb-1">專注於今天</div>
-            <p class="text-sm text-ink-3 max-w-sm">從右側的建議或任何工作卡片的「…」選單，將工作新增至「我的一天」。「我的一天」會在每天結束時清除。</p>
+            <p class="text-sm text-ink-3 max-w-sm">從「建議」或任何工作卡片的「…」選單，將工作新增至「我的一天」。「我的一天」會在每天結束時清除。</p>
           </div>
           <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <TaskCard v-for="t in tasks" :key="t.id" :task="t" show-plan />
@@ -29,17 +30,17 @@
     </div>
 
     <!-- 建議 -->
-    <aside class="w-[320px] shrink-0 border-l border-line bg-[#fafafa] flex flex-col">
+    <aside class="w-full lg:w-[320px] shrink-0 border-t lg:border-t-0 lg:border-l border-line bg-[#fafafa] flex flex-col">
       <div class="px-4 h-14 flex items-center gap-2 shrink-0">
         <Icon name="info" :size="16" class="text-ink-3" />
         <span class="font-semibold">建議</span>
       </div>
       <p class="px-4 text-xs text-ink-3 mb-2">指派給你、今天到期或已逾期的工作。</p>
-      <div class="flex-1 overflow-y-auto thin-scroll px-3 pb-4 space-y-2">
+      <div class="lg:flex-1 lg:overflow-y-auto thin-scroll px-3 pb-4 space-y-2">
         <div v-for="t in suggestions" :key="t.id" class="relative group/sg">
           <TaskCard :task="t" show-plan />
           <button
-            class="absolute right-2 bottom-2 btn btn-default !h-7 !px-2 text-xs opacity-0 group-hover/sg:opacity-100"
+            class="absolute right-2 bottom-2 btn btn-default !h-7 !px-2 text-xs touch-show opacity-0 group-hover/sg:opacity-100"
             @click.stop="add(t)"
           >
             <Icon name="plus" :size="14" />加入

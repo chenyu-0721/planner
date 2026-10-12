@@ -21,7 +21,7 @@
         </div>
         <button
           v-if="m.planRole !== 'owner' && (planStore.plan?.canManage || m.id === auth.user?.id)"
-          class="icon-btn !size-7 opacity-0 group-hover/m:opacity-100"
+          class="icon-btn !size-7 touch-show opacity-0 group-hover/m:opacity-100"
           :title="m.id === auth.user?.id ? '離開計劃' : '從計劃移除'"
           @click="remove(m)"
         >

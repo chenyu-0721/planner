@@ -1,12 +1,12 @@
 <template>
   <div class="flex-1 min-h-0 flex flex-col">
-    <div class="bg-white border-b border-line shrink-0 px-6 pt-4">
+    <div class="bg-white border-b border-line shrink-0 px-3 sm:px-6 pt-3 sm:pt-4">
       <div class="flex items-center gap-3 mb-2">
         <Icon name="circle-check" :size="26" class="text-brand" />
         <h1 class="text-xl font-semibold">我的工作</h1>
-        <span class="text-sm text-ink-3">指派給我的工作</span>
+        <span class="hidden sm:inline text-sm text-ink-3">指派給我的工作</span>
       </div>
-      <div class="flex items-end gap-1">
+      <div class="flex flex-wrap items-end gap-1">
         <button v-for="v in views" :key="v.key"
                 class="flex items-center gap-1.5 px-2.5 h-10 text-sm border-b-[3px] -mb-px cursor-pointer"
                 :class="view === v.key ? 'border-brand font-semibold' : 'border-transparent text-ink-2 hover:bg-hover rounded-t'"
@@ -14,17 +14,17 @@
           <Icon :name="v.icon" :size="16" />{{ v.label }}
         </button>
         <div class="flex-1"></div>
-        <div class="flex items-center gap-2 pb-1">
-          <div class="relative w-52">
+        <div class="flex items-center gap-2 pb-1 w-full sm:w-auto order-first sm:order-none">
+          <div class="relative flex-1 min-w-0 sm:flex-none sm:w-52">
             <Icon name="search" :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" />
             <input v-model="keyword" class="input !pl-8" placeholder="依關鍵字篩選" />
           </div>
-          <select v-model="status" class="input select !w-28">
+          <select v-model="status" class="input select !w-24 sm:!w-28 shrink-0">
             <option value="open">未完成</option>
             <option value="done">已完成</option>
             <option value="all">全部</option>
           </select>
-          <select v-if="view === 'board'" v-model="groupBy" class="input select !w-36">
+          <select v-if="view === 'board'" v-model="groupBy" class="input select !w-32 sm:!w-36 shrink-0">
             <option value="progress">群組：進度</option>
             <option value="due">群組：到期日</option>
             <option value="plan">群組：計劃</option>
@@ -36,33 +36,36 @@
     <div v-if="loading && !loaded" class="py-16 text-center text-ink-3">載入中…</div>
 
     <!-- 清單 -->
-    <div v-else-if="view === 'list'" class="flex-1 min-h-0 overflow-auto thin-scroll px-6 py-4">
-      <div class="bg-white rounded-md card-shadow min-w-[860px]">
-        <div class="grid grid-cols-[44px_minmax(220px,2fr)_minmax(160px,1.2fr)_minmax(110px,1fr)_110px_100px_110px] items-center h-10 pr-3 text-xs font-semibold text-ink-3 border-b border-line">
-          <div></div><div>工作名稱</div><div>計劃</div><div>貯體</div><div>進度</div><div>優先順序</div><div>到期日</div>
+    <div v-else-if="view === 'list'" class="flex-1 min-h-0 overflow-auto thin-scroll px-3 sm:px-6 py-3 sm:py-4">
+      <div class="bg-white rounded-md card-shadow md:min-w-[860px]">
+        <div class="grid grid-cols-[40px_minmax(0,1fr)_64px] md:grid-cols-[44px_minmax(220px,2fr)_minmax(160px,1.2fr)_minmax(110px,1fr)_110px_100px_110px] items-center h-10 pr-3 text-xs font-semibold text-ink-3 border-b border-line">
+          <div></div><div>工作名稱</div><div class="hidden md:block">計劃</div><div class="hidden md:block">貯體</div><div class="hidden md:block">進度</div><div class="hidden md:block">優先順序</div><div>到期日</div>
         </div>
         <div v-if="!filtered.length" class="py-12 text-center text-sm text-ink-3">沒有工作</div>
         <div v-for="t in filtered" :key="t.id"
-             class="grid grid-cols-[44px_minmax(220px,2fr)_minmax(160px,1.2fr)_minmax(110px,1fr)_110px_100px_110px] items-center h-11 pr-3 text-sm border-b border-line last:border-0 hover:bg-[#fafafa]">
+             class="grid grid-cols-[40px_minmax(0,1fr)_64px] md:grid-cols-[44px_minmax(220px,2fr)_minmax(160px,1.2fr)_minmax(110px,1fr)_110px_100px_110px] items-center min-h-11 py-1 md:py-0 pr-3 text-sm border-b border-line last:border-0 hover:bg-[#fafafa]">
           <button class="flex justify-center cursor-pointer" @click="update(t, { progress: t.progress === 100 ? 0 : 100 })">
             <ProgressIcon :value="t.progress === 100 ? 100 : 0" :size="18" />
           </button>
-          <button class="truncate text-left hover:underline cursor-pointer pr-3" :class="t.progress === 100 ? 'line-through text-ink-3' : ''" @click="ui.openTask(t)">{{ t.title }}</button>
-          <router-link :to="`/plans/${t.planId}`" class="flex items-center gap-2 min-w-0 hover:underline pr-3">
+          <div class="min-w-0 pr-3">
+            <button class="block max-w-full truncate text-left hover:underline cursor-pointer" :class="t.progress === 100 ? 'line-through text-ink-3' : ''" @click="ui.openTask(t)">{{ t.title }}</button>
+            <div class="md:hidden text-xs text-ink-3 truncate">{{ t.plan?.name }}<template v-if="t.bucket"> · {{ t.bucket.name }}</template></div>
+          </div>
+          <router-link :to="`/plans/${t.planId}`" class="hidden md:flex items-center gap-2 min-w-0 hover:underline pr-3">
             <PlanIcon :plan="t.plan" :size="20" /><span class="truncate">{{ t.plan?.name }}</span>
           </router-link>
-          <span class="truncate text-ink-2 pr-3">{{ t.bucket?.name }}</span>
-          <span class="flex items-center gap-1.5 text-ink-2"><ProgressIcon :value="t.progress" :size="14" />{{ progressLabel(t.progress) }}</span>
-          <span class="flex items-center gap-1.5 text-ink-2"><span class="w-3.5 flex justify-center"><PriorityIcon :value="t.priority" show-medium /></span>{{ priorityLabel(t.priority) }}</span>
+          <span class="hidden md:block truncate text-ink-2 pr-3">{{ t.bucket?.name }}</span>
+          <span class="hidden md:flex items-center gap-1.5 text-ink-2"><ProgressIcon :value="t.progress" :size="14" />{{ progressLabel(t.progress) }}</span>
+          <span class="hidden md:flex items-center gap-1.5 text-ink-2"><span class="w-3.5 flex justify-center"><PriorityIcon :value="t.priority" show-medium /></span>{{ priorityLabel(t.priority) }}</span>
           <span :class="isLate(t) ? 'text-[#c50f1f] font-semibold' : 'text-ink-2'">{{ t.dueDate ? fmtShort(t.dueDate) : '' }}</span>
         </div>
       </div>
     </div>
 
     <!-- 面板 -->
-    <div v-else class="flex-1 min-h-0 overflow-x-auto thin-scroll">
-      <div class="h-full flex items-start gap-3 px-6 pt-4 w-max">
-        <section v-for="col in columns" :key="col.key" class="w-[284px] h-full flex flex-col shrink-0">
+    <div v-else class="flex-1 min-h-0 overflow-x-auto thin-scroll snap-x snap-mandatory md:snap-none">
+      <div class="h-full flex items-start gap-3 px-3 sm:px-6 pt-4 w-max">
+        <section v-for="col in columns" :key="col.key" class="w-[85vw] max-w-[284px] sm:w-[284px] h-full flex flex-col shrink-0 snap-start scroll-ml-3">
           <header class="flex items-center gap-2 h-10 px-1 shrink-0">
             <ProgressIcon v-if="groupBy === 'progress'" :value="col.ref" :size="16" />
             <PlanIcon v-if="groupBy === 'plan'" :plan="col.plan" :size="20" />
@@ -82,6 +85,8 @@
                 fallback-class="drag-fallback"
               :animation="150"
               :disabled="groupBy === 'plan'"
+              :delay="250"
+              :delay-on-touch-only="true"
               @change="(e) => onChange(e, col)"
             >
               <template #item="{ element }">

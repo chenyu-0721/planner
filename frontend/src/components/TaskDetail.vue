@@ -7,8 +7,8 @@
       </div>
     </template>
 
-    <div v-if="loading && !task" class="px-6 py-16 text-center text-ink-3">載入中…</div>
-    <div v-else-if="task" class="px-6 pb-6">
+    <div v-if="loading && !task" class="px-4 sm:px-6 py-16 text-center text-ink-3">載入中…</div>
+    <div v-else-if="task" class="px-4 sm:px-6 pb-6">
       <!-- 標題 -->
       <div class="flex items-start gap-2 mb-1">
         <button class="mt-2 cursor-pointer" :title="done ? '標示為未完成' : '標示為完成'" @click="save({ progress: done ? 0 : 100 })">
@@ -19,7 +19,7 @@
           v-model="title"
           rows="1"
           maxlength="200"
-          class="flex-1 resize-none overflow-hidden text-xl font-semibold leading-7 px-2 py-1.5 rounded border border-transparent hover:border-line-2 focus:border-accent outline-none"
+          class="flex-1 resize-none overflow-hidden text-lg sm:text-xl font-semibold leading-7 px-2 py-1.5 rounded border border-transparent hover:border-line-2 focus:border-accent outline-none"
           :class="done ? 'line-through text-ink-3' : ''"
           @input="autoGrow"
           @keydown.enter.prevent="$event.target.blur()"
@@ -76,8 +76,8 @@
       </div>
 
       <!-- 欄位 -->
-      <div class="grid grid-cols-3 gap-4 mb-4">
-        <div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-4">
+        <div class="col-span-2 sm:col-span-1">
           <label class="field-label">貯體</label>
           <select class="input select" :value="task.bucketId" @change="save({ bucketId: Number($event.target.value) })">
             <option v-for="b in planStore.sortedBuckets" :key="b.id" :value="b.id">{{ b.name }}</option>
@@ -137,7 +137,7 @@
         <draggable :model-value="sortedChecklist" item-key="id" handle=".ck-handle" :animation="150" ghost-class="drag-ghost" @change="onChecklistMove">
           <template #item="{ element: c }">
             <div class="group/ck flex items-center gap-2 h-9 px-1 rounded hover:bg-hover">
-              <span class="ck-handle cursor-grab text-ink-4 opacity-0 group-hover/ck:opacity-100"><Icon name="move" :size="12" /></span>
+              <span class="ck-handle cursor-grab text-ink-4 touch-show opacity-0 group-hover/ck:opacity-100"><Icon name="move" :size="12" /></span>
               <input type="checkbox" class="size-4 accent-accent cursor-pointer" :checked="c.isChecked" @change="updateItem(c, { isChecked: $event.target.checked })" />
               <input
                 class="flex-1 bg-transparent outline-none text-sm border-b border-transparent focus:border-accent"
@@ -147,7 +147,7 @@
                 @keydown.enter="$event.target.blur()"
                 @blur="($event.target.value.trim() && $event.target.value.trim() !== c.title) && updateItem(c, { title: $event.target.value.trim() })"
               />
-              <button class="icon-btn !size-7 opacity-0 group-hover/ck:opacity-100" title="刪除" @click="removeItem(c)"><Icon name="x" :size="14" /></button>
+              <button class="icon-btn !size-7 touch-show opacity-0 group-hover/ck:opacity-100" title="刪除" @click="removeItem(c)"><Icon name="x" :size="14" /></button>
             </div>
           </template>
         </draggable>
@@ -171,7 +171,7 @@
               <input type="checkbox" class="accent-accent" :checked="task.previewType === 'reference'" @change="setPreview('reference', $event.target.checked)" />
               在卡片上顯示
             </label>
-            <button class="icon-btn !size-7 opacity-0 group-hover/at:opacity-100" title="移除附件" @click="removeAttachment(a)"><Icon name="trash" :size="14" /></button>
+            <button class="icon-btn !size-7 touch-show opacity-0 group-hover/at:opacity-100" title="移除附件" @click="removeAttachment(a)"><Icon name="trash" :size="14" /></button>
           </div>
         </div>
         <div v-if="linkForm" class="flex flex-col gap-2 p-3 rounded border border-line mb-2">
@@ -212,7 +212,7 @@
               <div class="flex items-center gap-2 text-xs">
                 <span class="font-semibold text-ink">{{ c.user?.displayName || '已刪除的使用者' }}</span>
                 <span class="text-ink-4">{{ fmtDateTime(c.createdAt) }}</span>
-                <button v-if="c.userId === auth.user?.id || auth.isAdmin" class="ml-auto text-ink-4 hover:text-[#c50f1f] opacity-0 group-hover/cm:opacity-100 cursor-pointer" @click="removeComment(c)">刪除</button>
+                <button v-if="c.userId === auth.user?.id || auth.isAdmin" class="ml-auto text-ink-4 hover:text-[#c50f1f] touch-show opacity-0 group-hover/cm:opacity-100 cursor-pointer" @click="removeComment(c)">刪除</button>
               </div>
               <p class="text-sm text-ink-2 whitespace-pre-line break-words mt-0.5">{{ c.content }}</p>
             </div>

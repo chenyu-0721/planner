@@ -1,10 +1,10 @@
 <template>
-  <div class="flex-1 min-h-0 overflow-y-auto thin-scroll px-6 py-4">
+  <div class="flex-1 min-h-0 overflow-y-auto thin-scroll px-3 sm:px-6 py-3 sm:py-4">
     <div class="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-4">
       <!-- 狀態 -->
-      <section class="bg-white rounded-md card-shadow p-5">
+      <section class="bg-white rounded-md card-shadow p-4 sm:p-5">
         <h3 class="text-base font-semibold mb-4">狀態</h3>
-        <div class="flex items-center gap-6">
+        <div class="flex flex-wrap items-center justify-center sm:justify-start gap-6">
           <svg width="160" height="160" viewBox="0 0 42 42" class="shrink-0">
             <circle cx="21" cy="21" r="15.915" fill="none" stroke="#edebe9" stroke-width="5" />
             <circle
@@ -32,7 +32,7 @@
       </section>
 
       <!-- 貯體 -->
-      <section class="bg-white rounded-md card-shadow p-5 min-w-0">
+      <section class="bg-white rounded-md card-shadow p-4 sm:p-5 min-w-0">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-base font-semibold">貯體</h3>
           <Legend />
@@ -54,7 +54,7 @@
       </section>
 
       <!-- 優先順序 -->
-      <section class="bg-white rounded-md card-shadow p-5">
+      <section class="bg-white rounded-md card-shadow p-4 sm:p-5">
         <h3 class="text-base font-semibold mb-4">優先順序</h3>
         <div class="space-y-3">
           <div v-for="p in priorityRows" :key="p.value" class="flex items-center gap-3 text-sm">
@@ -69,7 +69,7 @@
       </section>
 
       <!-- 成員 -->
-      <section class="bg-white rounded-md card-shadow p-5 min-w-0">
+      <section class="bg-white rounded-md card-shadow p-4 sm:p-5 min-w-0">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-base font-semibold">成員</h3>
           <Legend />
@@ -77,7 +77,7 @@
         <div class="space-y-3">
           <div v-for="r in memberRows" :key="r.key" class="flex items-center gap-3 text-sm">
             <Avatar :user="r.user" :size="28" />
-            <span class="w-28 truncate text-ink-2">{{ r.label }}</span>
+            <span class="w-16 sm:w-28 truncate text-ink-2">{{ r.label }}</span>
             <div class="flex-1 h-5 flex">
               <div class="flex h-full rounded overflow-hidden" :style="{ width: `${maxMember ? (r.total / maxMember) * 100 : 0}%` }">
                 <div v-for="s in STATUS" :key="s.key" :style="{ background: s.color, flexGrow: r[s.key] }" :title="`${s.label}：${r[s.key]}`"></div>

@@ -11,20 +11,20 @@
   <template v-else>
     <!-- 計劃標頭 -->
     <div class="bg-white border-b border-line shrink-0">
-      <div class="flex items-center gap-3 px-6 pt-3">
+      <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-6 pt-3">
         <PlanIcon :plan="plan" :size="36" />
         <div class="min-w-0 flex items-center gap-1">
           <input
             v-if="editingName"
             v-model="nameDraft"
             v-focus
-            class="input !h-8 text-lg font-semibold w-72"
+            class="input !h-8 text-lg font-semibold w-44 sm:w-72"
             maxlength="100"
             @keydown.enter="$event.target.blur()"
             @keydown.esc="editingName = false"
             @blur="saveName"
           />
-          <h1 v-else class="text-lg font-semibold truncate px-1 rounded hover:bg-hover cursor-text" title="重新命名計劃" @click="startEditName">{{ plan.name }}</h1>
+          <h1 v-else class="text-base sm:text-lg font-semibold truncate px-1 rounded hover:bg-hover cursor-text" title="重新命名計劃" @click="startEditName">{{ plan.name }}</h1>
           <button v-if="plan.isMember" class="icon-btn" :class="plan.pinned ? 'text-[#c19c00]' : ''" :title="plan.pinned ? '取消釘選' : '釘選此計劃'" @click="planStore.togglePin()">
             <svg v-if="plan.pinned" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.94 5.96 6.56.95-4.75 4.63 1.12 6.54L12 17.5l-5.87 3.08 1.12-6.54L2.5 9.41l6.56-.95L12 2.5z" /></svg>
             <Icon v-else name="star" :size="16" />
@@ -47,10 +47,10 @@
         <Popover placement="bottom-end">
           <template #trigger>
             <button class="flex items-center gap-2 h-8 px-2 rounded hover:bg-hover cursor-pointer" title="成員">
-              <div class="flex -space-x-1.5">
+              <div class="hidden sm:flex -space-x-1.5">
                 <Avatar v-for="m in planStore.members.slice(0, 4)" :key="m.id" :user="m" :size="26" ring />
               </div>
-              <span v-if="planStore.members.length > 4" class="text-xs text-ink-3">+{{ planStore.members.length - 4 }}</span>
+              <span v-if="planStore.members.length > 4" class="hidden sm:inline text-xs text-ink-3">+{{ planStore.members.length - 4 }}</span>
               <Icon name="user-plus" :size="16" class="text-ink-2" />
             </button>
           </template>
@@ -58,12 +58,12 @@
         </Popover>
       </div>
 
-      <div class="flex items-end gap-1 px-5 mt-1">
+      <div class="flex items-end gap-1 px-2 sm:px-5 mt-1 overflow-x-auto no-scrollbar">
         <router-link
           v-for="v in views"
           :key="v.key"
           :to="`/plans/${plan.id}/${v.key}`"
-          class="flex items-center gap-1.5 px-2.5 h-10 text-sm border-b-[3px] -mb-px"
+          class="shrink-0 whitespace-nowrap flex items-center gap-1.5 px-2 sm:px-2.5 h-10 text-sm border-b-[3px] -mb-px"
           :class="view === v.key ? 'border-brand font-semibold text-ink' : 'border-transparent text-ink-2 hover:text-ink hover:bg-hover rounded-t'"
         >
           <Icon :name="v.icon" :size="16" />{{ v.label }}
@@ -71,11 +71,11 @@
 
         <div class="flex-1"></div>
 
-        <div class="flex items-center gap-1 pb-1">
+        <div class="shrink-0 flex items-center gap-1 pb-1">
           <Popover placement="bottom-end">
             <template #trigger>
               <button class="btn btn-ghost" :class="filterCount ? '!text-accent !font-semibold' : ''">
-                <Icon name="filter" :size="16" />篩選<template v-if="filterCount"> ({{ filterCount }})</template>
+                <Icon name="filter" :size="16" /><span class="hidden sm:inline">篩選</span><template v-if="filterCount"> ({{ filterCount }})</template>
               </button>
             </template>
             <FilterPanel v-model="filters" :members="planStore.members" :buckets="planStore.sortedBuckets" :label-names="plan.labelNames" />
@@ -84,7 +84,7 @@
 
           <Popover v-if="view === 'board'" placement="bottom-end" close-on-click>
             <template #trigger>
-              <button class="btn btn-ghost"><Icon name="group" :size="16" />群組依據：{{ groupLabel }}<Icon name="chevron-down" :size="14" /></button>
+              <button class="btn btn-ghost !px-2 sm:!px-3"><Icon name="group" :size="16" /><span class="hidden lg:inline">群組依據：</span><span class="hidden sm:inline">{{ groupLabel }}</span><Icon name="chevron-down" :size="14" /></button>
             </template>
             <button v-for="g in GROUP_OPTIONS" :key="g.key" class="menu-item" @click="groupBy = g.key">
               <span class="w-4"><Icon v-if="groupBy === g.key" name="check" :size="15" class="text-accent" /></span>{{ g.label }}

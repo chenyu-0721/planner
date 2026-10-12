@@ -14,8 +14,20 @@ export const useUiStore = defineStore('ui', {
     taskEvent: null,
     // 伺服器功能開關（/api/config）
     features: { fileUpload: false },
+    // 手機版（< 768px）：側邊欄改為抽屜
+    isMobile: window.matchMedia('(max-width: 767px)').matches,
+    navOpen: false,
   }),
   actions: {
+    watchViewport() {
+      const mq = window.matchMedia('(max-width: 767px)');
+      const update = () => {
+        this.isMobile = mq.matches;
+        if (!mq.matches) this.navOpen = false;
+      };
+      update();
+      mq.addEventListener('change', update);
+    },
     async loadConfig() {
       try {
         this.features = await api.get('/config');

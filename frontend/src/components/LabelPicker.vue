@@ -23,7 +23,7 @@
             <span class="w-4 shrink-0 text-accent"><Icon v-if="modelValue.includes(l.id)" name="check" :size="16" :stroke="2.4" /></span>
             <LabelPill :id="l.id" :label-names="labelNames" />
           </button>
-          <button class="icon-btn !size-7 opacity-0 group-hover/label:opacity-100" title="重新命名標籤" @click="startEdit(l)">
+          <button class="icon-btn !size-7 touch-show opacity-0 group-hover/label:opacity-100" title="重新命名標籤" @click="startEdit(l)">
             <Icon name="pencil" :size="13" />
           </button>
         </template>

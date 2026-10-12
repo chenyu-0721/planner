@@ -124,3 +124,18 @@ body {
   box-shadow: 0 6.4px 14.4px rgba(0, 0, 0, 0.132), 0 1.2px 3.6px rgba(0, 0, 0, 0.108);
   cursor: grabbing !important;
 }
+
+/* 觸控裝置沒有 hover，滑過才出現的按鈕改為一直顯示 */
+@media (hover: none) {
+  .touch-show {
+    opacity: 1 !important;
+  }
+}
+
+/* 隱藏捲軸但保留捲動（手機上的分頁列） */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

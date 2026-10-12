@@ -1,12 +1,12 @@
 <template>
-  <div class="flex-1 min-h-0 flex">
-    <div class="flex-1 min-w-0 flex flex-col px-6 py-4">
+  <div class="flex-1 min-h-0 flex relative">
+    <div class="flex-1 min-w-0 flex flex-col px-3 sm:px-6 py-3 sm:py-4">
       <!-- 工具列 -->
-      <div class="flex items-center gap-2 mb-3 shrink-0">
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-2 mb-3 shrink-0">
         <button class="btn btn-default" @click="goToday">今天</button>
         <button class="icon-btn" title="上一個" @click="move(-1)"><Icon name="chevron-left" :size="18" /></button>
         <button class="icon-btn" title="下一個" @click="move(1)"><Icon name="chevron-right" :size="18" /></button>
-        <h2 class="text-lg font-semibold ml-1">{{ heading }}</h2>
+        <h2 class="text-base sm:text-lg font-semibold ml-1">{{ heading }}</h2>
         <div class="flex-1"></div>
         <div class="inline-flex rounded border border-line-2 bg-white overflow-hidden">
           <button v-for="m in modes" :key="m.key" class="px-3 h-8 text-sm cursor-pointer" :class="mode === m.key ? 'bg-accent text-white font-semibold' : 'hover:bg-hover'" @click="mode = m.key">
@@ -14,13 +14,13 @@
           </button>
         </div>
         <button class="btn btn-ghost" @click="showUnscheduled = !showUnscheduled">
-          <Icon name="calendar" :size="16" />未排程的工作 ({{ unscheduled.length }})
+          <Icon name="calendar" :size="16" /><span class="hidden sm:inline">未排程的工作</span> ({{ unscheduled.length }})
         </button>
       </div>
 
       <!-- 星期列 -->
       <div class="grid grid-cols-7 bg-white border border-line rounded-t-md shrink-0">
-        <div v-for="(w, i) in WEEKDAYS" :key="w" class="h-8 flex items-center px-2 text-xs font-semibold text-ink-3" :class="i ? 'border-l border-line' : ''">週{{ w }}</div>
+        <div v-for="(w, i) in WEEKDAYS" :key="w" class="h-8 flex items-center justify-center sm:justify-start px-1 sm:px-2 text-xs font-semibold text-ink-3" :class="i ? 'border-l border-line' : ''"><span class="hidden sm:inline">週</span>{{ w }}</div>
       </div>
 
       <!-- 日曆 -->
@@ -36,7 +36,7 @@
             <div
               v-for="(d, i) in week.days"
               :key="d"
-              class="group relative px-1.5 pt-1"
+              class="group relative px-0.5 sm:px-1.5 pt-1"
               :class="[i ? 'border-l border-line' : '', inMonth(d) ? '' : 'bg-[#fafafa]', dropDay === d ? '!bg-accent-light' : '']"
               @dragover.prevent="dropDay = d"
               @dragleave="dropDay === d && (dropDay = null)"
@@ -49,7 +49,7 @@
                 >{{ dayLabel(d) }}</span>
                 <Popover>
                   <template #trigger>
-                    <button class="icon-btn !size-6 opacity-0 group-hover:opacity-100" title="在這天新增工作"><Icon name="plus" :size="14" /></button>
+                    <button class="icon-btn !size-6 touch-show opacity-0 group-hover:opacity-100" title="在這天新增工作"><Icon name="plus" :size="14" /></button>
                   </template>
                   <template #default="{ close }">
                     <div class="p-2 w-64">
@@ -88,7 +88,7 @@
     </div>
 
     <!-- 未排程 -->
-    <aside v-if="showUnscheduled" class="w-[280px] shrink-0 border-l border-line bg-[#fafafa] flex flex-col">
+    <aside v-if="showUnscheduled" class="w-[280px] max-w-[85vw] shrink-0 border-l border-line bg-[#fafafa] flex flex-col max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-20 max-lg:shadow-2xl">
       <div class="flex items-center justify-between px-4 h-12 shrink-0">
         <span class="font-semibold text-sm">未排程的工作</span>
         <button class="icon-btn !size-7" @click="showUnscheduled = false"><Icon name="x" :size="14" /></button>
@@ -125,7 +125,8 @@ const modes = [{ key: 'week', label: '週' }, { key: 'month', label: '月' }];
 const mode = ref('month');
 const cursor = ref(todayStr());
 const today = todayStr();
-const showUnscheduled = ref(true);
+// 寬螢幕預設顯示「未排程的工作」，手機 / 平板預設收起
+const showUnscheduled = ref(window.matchMedia('(min-width: 1024px)').matches);
 const dropDay = ref(null);
 let dragTask = null;
 const vFocus = { mounted: (el) => el.focus() };
@@ -197,7 +198,8 @@ const weeks = computed(() => {
 const inMonth = (d) => mode.value === 'week' || parseDate(d).getMonth() === cursorDate.value.getMonth();
 const dayLabel = (d) => {
   const x = parseDate(d);
-  return x.getDate() === 1 ? `${x.getMonth() + 1}月${x.getDate()}日` : x.getDate();
+  if (x.getDate() !== 1) return x.getDate();
+  return ui.isMobile ? `${x.getMonth() + 1}/1` : `${x.getMonth() + 1}月1日`;
 };
 const statusColor = (t) => {
   if (t.progress === 100) return '#107c10';

@@ -36,7 +36,7 @@
         </div>
         <Popover placement="bottom-end" close-on-click>
           <template #trigger>
-            <button class="icon-btn !size-6 -mr-1 -mt-0.5 opacity-0 group-hover:opacity-100" title="更多選項">
+            <button class="icon-btn !size-6 -mr-1 -mt-0.5 touch-show opacity-0 group-hover:opacity-100" title="更多選項">
               <Icon name="more" :size="16" />
             </button>
           </template>

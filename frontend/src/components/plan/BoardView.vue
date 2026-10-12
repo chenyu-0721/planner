@@ -1,11 +1,13 @@
 <template>
-  <div class="flex-1 min-h-0 overflow-x-auto overflow-y-hidden thin-scroll">
-    <div class="h-full flex items-start gap-3 px-6 pt-4 pb-2 w-max">
+  <div class="flex-1 min-h-0 overflow-x-auto overflow-y-hidden thin-scroll snap-x snap-mandatory md:snap-none">
+    <div class="h-full flex items-start gap-3 px-3 sm:px-6 pt-3 sm:pt-4 pb-2 w-max">
       <draggable
         :model-value="columns"
         item-key="key"
         class="h-full flex items-start gap-3"
         handle=".bucket-handle"
+        :delay="250"
+        :delay-on-touch-only="true"
         :disabled="groupBy !== 'bucket'"
         :animation="150"
         ghost-class="drag-ghost"
@@ -15,7 +17,7 @@
         @change="onBucketMove"
       >
         <template #item="{ element: col }">
-          <section class="w-[284px] h-full flex flex-col shrink-0">
+          <section class="w-[85vw] max-w-[284px] sm:w-[284px] h-full flex flex-col shrink-0 snap-start scroll-ml-3">
             <!-- 欄位標題 -->
             <header class="bucket-handle flex items-center gap-2 h-10 px-1 shrink-0" :class="groupBy === 'bucket' ? 'cursor-grab active:cursor-grabbing' : ''">
               <template v-if="col.kind === 'progress'"><ProgressIcon :value="col.ref" :size="16" /></template>
@@ -81,7 +83,7 @@
                 :fallback-on-body="true"
                 fallback-class="drag-fallback"
                 :animation="150"
-                :delay="80"
+                :delay="250"
                 :delay-on-touch-only="true"
                 @start="dragFrom = col"
                 @change="(e) => onChange(e, col, 'active')"
@@ -105,6 +107,8 @@
                   item-key="id"
                   :group="{ name: 'tasks', put: col.canDrop }"
                   class="flex flex-col gap-2 min-h-4"
+                  :delay="250"
+                  :delay-on-touch-only="true"
                   ghost-class="drag-ghost"
                 :force-fallback="true"
                 :fallback-on-body="true"
@@ -124,7 +128,7 @@
       </draggable>
 
       <!-- 新增貯體 -->
-      <section v-if="groupBy === 'bucket'" class="w-[284px] shrink-0">
+      <section v-if="groupBy === 'bucket'" class="w-[85vw] max-w-[284px] sm:w-[284px] shrink-0 snap-start scroll-ml-3">
         <div v-if="addingBucket" class="h-10 flex items-center">
           <input
             v-model="newBucketName"

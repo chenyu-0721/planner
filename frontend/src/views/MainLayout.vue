@@ -3,6 +3,10 @@
     <AppHeader @profile="profileOpen = true" />
     <div class="flex flex-1 min-h-0">
       <SideNav />
+      <!-- 手機版側邊欄遮罩 -->
+      <Transition name="fade">
+        <div v-if="ui.isMobile && ui.navOpen" class="fixed inset-0 z-40 bg-black/40" @click="ui.navOpen = false"></div>
+      </Transition>
       <main class="flex-1 min-w-0 flex flex-col bg-canvas">
         <router-view :key="routeKey" />
       </main>
@@ -14,7 +18,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import AppHeader from '@/components/AppHeader.vue';
 import SideNav from '@/components/SideNav.vue';
@@ -31,7 +35,11 @@ const profileOpen = ref(false);
 // 切換計劃時重新建立元件，同一計劃切換檢視則保留
 const routeKey = computed(() => (route.name === 'plan' ? `plan-${route.params.id}` : route.path));
 
+// 手機版換頁後關閉側邊欄
+watch(() => route.fullPath, () => { ui.navOpen = false; });
+
 onMounted(() => {
+  ui.watchViewport();
   plans.fetch();
   plans.fetchUsers();
   ui.loadConfig();

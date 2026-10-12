@@ -1,10 +1,10 @@
 <template>
   <div class="flex-1 overflow-y-auto thin-scroll">
-    <div class="max-w-[1100px] mx-auto px-8 py-6">
-      <div class="flex items-center justify-between mb-5">
+    <div class="max-w-[1100px] mx-auto px-4 sm:px-8 py-4 sm:py-6">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div class="flex items-center gap-3">
           <Icon name="shield" :size="26" class="text-brand" />
-          <h1 class="text-2xl font-semibold">使用者管理</h1>
+          <h1 class="text-xl sm:text-2xl font-semibold">使用者管理</h1>
         </div>
         <div class="flex gap-2">
           <button class="btn btn-default" @click="openMyPassword"><Icon name="key" :size="16" />變更我的密碼</button>
@@ -12,8 +12,8 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-3 mb-3">
-        <div class="relative w-72">
+      <div class="flex flex-wrap items-center gap-2 sm:gap-3 mb-3">
+        <div class="relative w-full sm:w-72">
           <Icon name="search" :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" />
           <input v-model="keyword" class="input !pl-8" placeholder="搜尋帳號、名稱或電子郵件" />
         </div>
@@ -26,11 +26,11 @@
       </div>
 
       <div class="bg-white rounded-md card-shadow overflow-hidden">
-        <div :class="cols" class="h-10 px-4 text-xs font-semibold text-ink-3 border-b border-line">
-          <div>使用者</div><div>電子郵件</div><div>角色</div><div>狀態</div><div>建立日期</div><div></div>
+        <div :class="cols" class="h-10 px-3 sm:px-4 text-xs font-semibold text-ink-3 border-b border-line">
+          <div>使用者</div><div class="hidden md:block">電子郵件</div><div>角色</div><div class="hidden md:block">狀態</div><div class="hidden md:block">建立日期</div><div></div>
         </div>
         <div v-if="!shown.length" class="py-12 text-center text-sm text-ink-3">沒有符合的使用者</div>
-        <div v-for="u in shown" :key="u.id" :class="cols" class="h-14 px-4 border-b border-line last:border-0 hover:bg-[#fafafa] text-sm">
+        <div v-for="u in shown" :key="u.id" :class="cols" class="h-14 px-3 sm:px-4 border-b border-line last:border-0 hover:bg-[#fafafa] text-sm">
           <div class="flex items-center gap-3 min-w-0">
             <Avatar :user="u" :size="32" />
             <div class="min-w-0">
@@ -41,14 +41,14 @@
               <div class="text-xs text-ink-3 truncate">{{ u.username }}</div>
             </div>
           </div>
-          <div class="truncate text-ink-2">{{ u.email || '—' }}</div>
+          <div class="hidden md:block truncate text-ink-2">{{ u.email || '—' }}</div>
           <div>
             <span class="inline-flex px-2 h-5 items-center rounded-full text-xs font-semibold" :class="u.role === 'admin' ? 'bg-brand-light text-brand-dark' : 'bg-hover text-ink-2'">
               {{ u.role === 'admin' ? '管理員' : '會員' }}
             </span>
           </div>
-          <div :class="u.isActive ? 'text-done' : 'text-ink-4'">{{ u.isActive ? '啟用' : '停用' }}</div>
-          <div class="text-ink-3">{{ fmtDateTime(u.createdAt) }}</div>
+          <div class="hidden md:block" :class="u.isActive ? 'text-done' : 'text-ink-4'">{{ u.isActive ? '啟用' : '停用' }}</div>
+          <div class="hidden md:block text-ink-3">{{ fmtDateTime(u.createdAt) }}</div>
           <div class="flex justify-end gap-1">
             <button class="icon-btn" title="編輯" @click="openForm(u)"><Icon name="pencil" :size="15" /></button>
             <button v-if="u.id !== auth.user?.id" class="icon-btn hover:!text-[#c50f1f]" title="刪除" @click="remove(u)"><Icon name="trash" :size="15" /></button>
@@ -146,7 +146,7 @@ const auth = useAuthStore();
 const ui = useUiStore();
 const plans = usePlansStore();
 
-const cols = 'grid grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_100px_90px_150px_100px] items-center';
+const cols = 'grid grid-cols-[minmax(0,1fr)_64px_76px] md:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_100px_90px_150px_100px] items-center';
 const users = ref([]);
 const keyword = ref('');
 const roleFilter = ref('');

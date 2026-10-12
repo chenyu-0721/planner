@@ -1,11 +1,15 @@
 <template>
   <header class="h-12 shrink-0 flex items-center bg-brand text-white pr-2 relative z-30">
-    <button class="size-12 flex items-center justify-center hover:bg-black/15" title="應用程式">
+    <!-- 手機：開啟側邊欄；桌面：應用程式選單 -->
+    <button class="md:hidden size-12 flex items-center justify-center hover:bg-black/15" title="選單" @click="ui.navOpen = true">
+      <Icon name="menu" :size="20" />
+    </button>
+    <button class="hidden md:flex size-12 items-center justify-center hover:bg-black/15" title="應用程式">
       <Icon name="waffle" :size="18" />
     </button>
-    <router-link to="/plans" class="px-2 text-base font-semibold tracking-tight hover:underline">Planner</router-link>
+    <router-link to="/plans" class="hidden sm:block px-2 text-base font-semibold tracking-tight hover:underline">Planner</router-link>
 
-    <div class="flex-1 flex justify-center px-4">
+    <div class="flex-1 min-w-0 flex justify-center px-1 sm:px-4">
       <div class="relative w-full max-w-[468px]">
         <Icon name="search" :size="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-brand" />
         <input
@@ -58,10 +62,12 @@ import Avatar from './Avatar.vue';
 import Popover from './Popover.vue';
 import PlanIcon from './PlanIcon.vue';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
 import { usePlansStore } from '@/stores/plans';
 
 defineEmits(['profile']);
 const auth = useAuthStore();
+const ui = useUiStore();
 const plans = usePlansStore();
 const router = useRouter();
 const keyword = ref('');
