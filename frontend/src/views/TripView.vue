@@ -168,6 +168,13 @@
                 </button>
               </Popover>
             </header>
+            <div v-if="g.numbered && dayWeather(g)" class="-mt-1 mb-2 pl-3 flex items-center gap-1.5 text-xs text-ink-2" :title="`天氣預報（${dayWeather(g).place}附近，Open-Meteo）`">
+              <span class="text-sm leading-none">{{ weatherInfo(dayWeather(g).code).emoji }}</span>
+              <span>{{ weatherInfo(dayWeather(g).code).label }}</span>
+              <span class="tabular-nums">{{ fmtTemp(dayWeather(g).min) }}–{{ fmtTemp(dayWeather(g).max) }}</span>
+              <span v-if="dayWeather(g).rain != null" class="tabular-nums" :class="dayWeather(g).rain >= 50 ? 'text-accent font-semibold' : 'text-ink-3'">☔ 降雨 {{ dayWeather(g).rain }}%</span>
+            </div>
+            <div v-else-if="g.numbered && g.date > weatherWindow.to" class="-mt-1 mb-2 pl-3 text-[11px] text-ink-4">出發前 {{ FORECAST_DAYS }} 天內會顯示天氣預報</div>
 
             <draggable
               :model-value="g.stops"
@@ -203,6 +210,9 @@
                       </div>
                       <div class="text-xs text-ink-3 flex flex-wrap gap-x-2">
                         <span v-if="s.startTime" class="flex items-center gap-0.5"><Icon name="clock" :size="11" />{{ s.startTime }}<template v-if="s.endTime">–{{ s.endTime }}</template></span>
+                        <span v-if="stopWeather(s)" class="tabular-nums" :title="`${s.startTime} 天氣：${weatherInfo(stopWeather(s).code).label}`">
+                          {{ weatherInfo(stopWeather(s).code).emoji }} {{ fmtTemp(stopWeather(s).temp) }}<span v-if="stopWeather(s).rain >= 20" :class="stopWeather(s).rain >= 50 ? 'text-accent font-semibold' : ''"> ☔{{ stopWeather(s).rain }}%</span>
+                        </span>
                         <span v-if="s.cost != null">{{ fmtCost(s.cost) }}</span>
                         <span v-if="s.address" class="truncate max-w-full">{{ s.address }}</span>
                       </div>
@@ -335,6 +345,9 @@ import {
   parseCoordinates, isGoogleMapsUrl, isShortGoogleUrl, placeFromGoogleUrl,
   TRAVEL_MODES, DEFAULT_TRAVEL_MODES, travelModeInfo, planDayRoute, upgradeRailLegs, fmtDuration, googleDirectionsUrl, googleSegmentUrl,
 } from '@/utils/trip';
+import {
+  fetchWeather, weatherKey, weatherInfo, weatherRange, hourlyAt, fmtTemp, FORECAST_DAYS,
+} from '@/utils/weather';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { usePlansStore } from '@/stores/plans';
@@ -557,6 +570,57 @@ const routeKey = computed(() => (trip.value ? [
 watch(routeKey, () => {
   clearTimeout(routeTimer);
   routeTimer = setTimeout(computeRoutes, 300);
+});
+
+/* ---- 天氣預報 ---- */
+const weather = ref(new Map());
+const weatherWindow = ref(weatherRange());
+const centerOf = (list) => ({
+  lat: list.reduce((sum, s) => sum + s.lat, 0) / list.length,
+  lng: list.reduce((sum, s) => sum + s.lng, 0) / list.length,
+});
+// 每天以當天地點的中心查詢；沒有地點的日子用整個行程的中心
+const dayCenters = computed(() => {
+  const dated = stops.value.filter((s) => s.date);
+  const tripCenter = dated.length ? centerOf(dated) : null;
+  const map = {};
+  for (const d of days.value) {
+    const list = dated.filter((s) => s.date === d.date);
+    const center = list.length ? centerOf(list) : tripCenter;
+    if (center) map[d.date] = { ...center, place: list.length ? (list.length === 1 ? `「${list[0].title}」` : '當天地點') : '行程地點' };
+  }
+  return map;
+});
+function dayWeather(g) {
+  const center = dayCenters.value[g.date];
+  const daily = center && weather.value.get(weatherKey(center))?.daily[g.date];
+  return daily ? { ...daily, place: center.place } : null;
+}
+const stopWeather = (s) => (s.date && s.startTime ? hourlyAt(weather.value.get(weatherKey(s)), s.date, s.startTime) : null);
+
+let weatherTimer = null;
+let weatherAbort = null;
+async function loadWeather() {
+  if (!trip.value) return;
+  weatherWindow.value = weatherRange();
+  const points = [...Object.values(dayCenters.value), ...stops.value.filter((s) => s.date)];
+  weatherAbort?.abort();
+  const ac = new AbortController();
+  weatherAbort = ac;
+  try {
+    weather.value = await fetchWeather(points, trip.value.startDate, trip.value.endDate, ac.signal);
+  } catch {
+    // 天氣只是輔助資訊，查不到就不顯示
+  }
+}
+const weatherQuery = computed(() => (trip.value ? [
+  trip.value.startDate, trip.value.endDate,
+  ...Object.values(dayCenters.value).map(weatherKey),
+  ...stops.value.filter((s) => s.date).map(weatherKey),
+].join('|') : ''));
+watch(weatherQuery, () => {
+  clearTimeout(weatherTimer);
+  weatherTimer = setTimeout(loadWeather, 500);
 });
 
 /* ---- 路段交通方式 ---- */

@@ -259,6 +259,7 @@ npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動
 | 高鐵 / 火車 / 捷運 | **沿著地圖上的實際軌道**畫出路線（捷運會自動轉乘），依軌道長度估算時間（高鐵約時速 180 公里、火車約 80 公里、捷運約 34 公里），並提供「查班次」連結到 Google 地圖查詢實際班次 |
 | 自動排時間 | 每天標題旁的 🕒 →「自動排時間」：設定出發時間、每段交通多留幾分鐘、各類地點停留多久，依目前順序與每段交通時間算出每個地點的開始 / 結束時間，先預覽再套用（已設定好時間的地點可沿用原本的停留時間） |
 | 最佳順序 | 🕒 →「最佳順序」：從當天第一個地點出發，重新排列中間的地點讓總移動時間最短（可選擇最後一站也固定，例如回到住宿），會顯示可省下的時間；套用後若這天已有時間，會接著開啟「自動排時間」 |
+| 天氣預報 | 出發前 16 天內，每天標題下方顯示當天地點附近的天氣、氣溫與降雨機率；有設定開始時間的地點會顯示那個時段的天氣（降雨機率 50% 以上會特別標示） |
 | 底圖 | 右上角切換「地圖」（臺灣通用電子地圖）、「衛星」（正射影像）、「OSM」 |
 | 我的位置 | 右下角定位按鈕（需允許瀏覽器定位） |
 | Google 地圖導航 | 每天標題旁的 ↗ 會用 Google 地圖開啟當天路線（手機會開啟 Google 地圖 App） |
@@ -275,6 +276,7 @@ npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動
 | OpenStreetMap | 底圖 | [OpenStreetMap](https://www.openstreetmap.org/copyright) |
 | Photon | 地點搜尋建議（固定使用當地中文名稱） | [komoot](https://photon.komoot.io/) |
 | 鐵路軌道資料 | 高鐵、火車、捷運沿軌道的路線（預先產生的靜態檔，執行時不呼叫外部服務） | [OpenStreetMap](https://www.openstreetmap.org/copyright)（ODbL） |
+| Open-Meteo | 天氣預報（非商業使用免費） | [Open-Meteo](https://open-meteo.com/)（CC BY 4.0） |
 | OSRM | 開車、腳踏車、步行路線；「最佳順序」的各點移動時間 | [FOSSGIS](https://routing.openstreetmap.de/) |
 | Valhalla | 機車路線（避開國道） | [FOSSGIS](https://valhalla1.openstreetmap.de/) |
 
