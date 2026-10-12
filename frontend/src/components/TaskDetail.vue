@@ -182,13 +182,17 @@
             <button class="btn btn-primary" :disabled="!linkForm.url.trim()" @click="addLink">儲存</button>
           </div>
         </div>
-        <Popover close-on-click>
+        <Popover v-if="ui.features.fileUpload" close-on-click>
           <template #trigger>
             <button class="btn btn-ghost !px-2" :disabled="uploading"><Icon name="paperclip" :size="15" />{{ uploading ? '上傳中…' : '新增附件' }}</button>
           </template>
           <button class="menu-item" @click="fileEl.click()"><Icon name="upload" />檔案</button>
           <button class="menu-item" @click="linkForm = { url: '', name: '' }"><Icon name="link" />連結</button>
         </Popover>
+        <!-- 未啟用檔案上傳（沒有 R2）時只能加連結 -->
+        <button v-else-if="!linkForm" class="btn btn-ghost !px-2" @click="linkForm = { url: '', name: '' }">
+          <Icon name="link" :size="15" />新增連結
+        </button>
         <input ref="fileEl" type="file" class="hidden" @change="uploadFile" />
       </div>
 

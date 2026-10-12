@@ -2,7 +2,7 @@
 
 仿 **Microsoft Planner** 的團隊工作管理系統。用「計劃 → 貯體 → 工作」的方式管理專案，介面和操作盡量和 Microsoft Planner 相同：看板拖曳、格線、排程行事曆、圖表、我的一天、我的工作等。
 
-這個分支（`cloudflare`）部署在 **Cloudflare Workers + D1 + R2**，不需要自己的伺服器或資料庫。
+這個分支（`cloudflare`）部署在 **Cloudflare Workers + D1**（R2 選用），不需要自己的伺服器或資料庫。
 （本機 MySQL + Express + PM2 的版本在 `main` 分支。）
 
 | 層 | 技術 |
@@ -10,7 +10,7 @@
 | 前端 | Vue 3、Vite、Tailwind CSS 4、Pinia、Vue Router、vuedraggable |
 | API | Cloudflare Workers、Hono、Drizzle ORM、JWT |
 | 資料庫 | Cloudflare D1（SQLite） |
-| 附件檔案 | Cloudflare R2 |
+| 附件檔案 | Cloudflare R2（選用，沒有時只能加連結附件） |
 | 前端託管 | Workers Static Assets（與 API 同一個 Worker） |
 
 ---
@@ -72,11 +72,28 @@ npx wrangler d1 create planner-db
 ]
 ```
 
-### 4. 建立 R2 bucket（存放附件）
+### 4.（選用）啟用 R2 檔案上傳
+
+**R2 不是必要的。** 沒有 R2 時，工作附件只能加「連結」，其他功能都正常；有 R2 才能「上傳檔案」。可以先不開，之後需要再啟用，程式不用改。
+
+要啟用時：
 
 ```bash
 npx wrangler r2 bucket create planner-uploads
 ```
+
+再把 `worker/wrangler.jsonc` 裡 `r2_buckets` 那段取消註解：
+
+```jsonc
+"r2_buckets": [
+  {
+    "binding": "UPLOADS",
+    "bucket_name": "planner-uploads"
+  }
+],
+```
+
+重新部署後，工作詳細資料的「新增附件」就會出現「檔案」選項。
 
 > 第一次使用 R2 需要先在 Cloudflare 後台的 R2 頁面啟用（免費額度內不收費，但啟用時可能要求綁定付款方式）。
 

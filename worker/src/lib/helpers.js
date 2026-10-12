@@ -149,8 +149,12 @@ export async function loadTaskSummary(c, taskId) {
   return task;
 }
 
+// 是否啟用檔案上傳（wrangler.jsonc 有綁定 R2 才會啟用）
+export const fileUploadEnabled = (c) => !!c.env.UPLOADS;
+
 // 刪除 R2 中的附件檔案
 export async function deleteStoredFiles(c, where) {
+  if (!fileUploadEnabled(c)) return;
   const rows = await getDb(c).select({ key: attachments.storageKey }).from(attachments)
     .where(and(eq(attachments.type, 'file'), where));
   const keys = rows.map((r) => r.key).filter(Boolean);

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { HttpError } from './lib/errors.js';
+import { fileUploadEnabled } from './lib/helpers.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import planRoutes from './routes/plans.js';
@@ -18,8 +19,12 @@ app.route('/api/buckets', bucketRoutes);
 app.route('/api/tasks', taskRoutes);
 app.route('/api/me', meRoutes);
 
-// 附件檔案（R2）
+// 前端需要知道的功能開關
+app.get('/api/config', (c) => c.json({ fileUpload: fileUploadEnabled(c) }));
+
+// 附件檔案（R2，未綁定時不提供）
 app.get('/uploads/:key', async (c) => {
+  if (!fileUploadEnabled(c)) return c.json({ message: '找不到檔案' }, 404);
   const object = await c.env.UPLOADS.get(c.req.param('key'));
   if (!object) return c.json({ message: '找不到檔案' }, 404);
   const headers = new Headers();

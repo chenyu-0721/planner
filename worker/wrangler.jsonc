@@ -1,37 +1,42 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "planner",
-  "main": "src/index.js",
-  "compatibility_date": "2026-10-01",
-  "observability": { "enabled": true },
-
-  // 前端（frontend build 輸出到 ./public），/api 與 /uploads 交給 Worker 處理
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/uploads/*"]
-  },
-
-  // D1 資料庫：執行 npx wrangler d1 create planner-db 後，把 database_id 換成輸出的值
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "planner-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
-      "migrations_dir": "migrations"
-    }
-  ],
-
-  // R2：附件檔案。執行 npx wrangler r2 bucket create planner-uploads 建立
-  "r2_buckets": [
-    { "binding": "UPLOADS", "bucket_name": "planner-uploads" }
-  ],
-
-  // 一般設定；JWT_SECRET 請用 npx wrangler secret put JWT_SECRET 設定（本機開發寫在 .dev.vars）
-  "vars": {
-    "TIMEZONE": "Asia/Taipei",
-    "JWT_EXPIRES_DAYS": "7",
-    "PBKDF2_ITERATIONS": "100000"
-  }
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "planner",
+	"main": "src/index.js",
+	"compatibility_date": "2026-10-01",
+	"observability": {
+		"enabled": true
+	},
+	// 前端（frontend build 輸出到 ./public），/api 與 /uploads 交給 Worker 處理
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": [
+			"/api/*",
+			"/uploads/*"
+		]
+	},
+	// D1 資料庫：執行 npx wrangler d1 create planner-db 後，把 database_id 換成輸出的值
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "planner-db",
+			"database_id": "2a3fef78-3c78-4eea-8700-dc5ed6aa2bf1",
+			"migrations_dir": "migrations"
+		},
+	],
+	// R2（選用）：啟用「上傳檔案」附件。沒有綁定時只能加連結附件。
+	// 要啟用：執行 npx wrangler r2 bucket create planner-uploads，再把下面這段取消註解後重新部署
+	// "r2_buckets": [
+	// 	{
+	// 		"binding": "UPLOADS",
+	// 		"bucket_name": "planner-uploads"
+	// 	}
+	// ],
+	// 一般設定；JWT_SECRET 請用 npx wrangler secret put JWT_SECRET 設定（本機開發寫在 .dev.vars）
+	"vars": {
+		"TIMEZONE": "Asia/Taipei",
+		"JWT_EXPIRES_DAYS": "7",
+		"PBKDF2_ITERATIONS": "100000"
+	}
 }

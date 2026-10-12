@@ -7,7 +7,7 @@ import {
 } from '../db/schema.js';
 import { HttpError } from '../lib/errors.js';
 import {
-  getDb, toId, nowIso, today, loadTaskWithAccess, loadTaskSummary, deleteStoredFiles,
+  getDb, toId, nowIso, today, loadTaskWithAccess, loadTaskSummary, deleteStoredFiles, fileUploadEnabled,
 } from '../lib/helpers.js';
 import { requireAuth } from '../lib/auth.js';
 import {
@@ -184,6 +184,7 @@ router.post('/:id/attachments', async (c) => {
   const user = c.get('user');
   let data;
   if ((c.req.header('content-type') || '').includes('multipart/form-data')) {
+    if (!fileUploadEnabled(c)) throw new HttpError(400, '尚未啟用檔案上傳，請改用連結附件');
     const form = await c.req.parseBody();
     const file = form.file;
     if (!(file instanceof File)) throw new HttpError(400, '請選擇檔案');
@@ -220,7 +221,7 @@ router.delete('/:id/attachments/:attId', async (c) => {
   const where = and(eq(attachments.id, toId(c.req.param('attId'))), eq(attachments.taskId, task.id));
   const att = await db.select().from(attachments).where(where).get();
   if (!att) throw new HttpError(404, '找不到附件');
-  if (att.storageKey) await c.env.UPLOADS.delete(att.storageKey);
+  if (att.storageKey && fileUploadEnabled(c)) await c.env.UPLOADS.delete(att.storageKey);
   await db.delete(attachments).where(where);
   return c.json({ ok: true });
 });

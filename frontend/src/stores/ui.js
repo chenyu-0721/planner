@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import api from '@/api';
 
 let toastSeq = 0;
 
@@ -11,8 +12,17 @@ export const useUiStore = defineStore('ui', {
     newPlanOpen: false,
     // 工作變更通知，讓「我的工作 / 我的一天」同步更新
     taskEvent: null,
+    // 伺服器功能開關（/api/config）
+    features: { fileUpload: false },
   }),
   actions: {
+    async loadConfig() {
+      try {
+        this.features = await api.get('/config');
+      } catch {
+        // 取不到設定時維持預設（不提供檔案上傳）
+      }
+    },
     toggleNav() {
       this.navCollapsed = !this.navCollapsed;
       localStorage.setItem('planner_nav', this.navCollapsed ? '1' : '0');

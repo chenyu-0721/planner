@@ -22,9 +22,11 @@ import TaskDetail from '@/components/TaskDetail.vue';
 import NewPlanDialog from '@/components/NewPlanDialog.vue';
 import ProfileDialog from '@/components/ProfileDialog.vue';
 import { usePlansStore } from '@/stores/plans';
+import { useUiStore } from '@/stores/ui';
 
 const route = useRoute();
 const plans = usePlansStore();
+const ui = useUiStore();
 const profileOpen = ref(false);
 // 切換計劃時重新建立元件，同一計劃切換檢視則保留
 const routeKey = computed(() => (route.name === 'plan' ? `plan-${route.params.id}` : route.path));
@@ -32,5 +34,6 @@ const routeKey = computed(() => (route.name === 'plan' ? `plan-${route.params.id
 onMounted(() => {
   plans.fetch();
   plans.fetchUsers();
+  ui.loadConfig();
 });
 </script>
