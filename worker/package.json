@@ -1,0 +1,23 @@
+{
+  "name": "planner-worker",
+  "version": "1.0.0",
+  "description": "Planner API on Cloudflare Workers (Hono + Drizzle + D1 + R2)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply planner-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply planner-db --remote",
+    "reset-password": "node scripts/reset-password.js"
+  },
+  "type": "module",
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.11",
+    "wrangler": "^4.149.0"
+  },
+  "private": true
+}

@@ -1,0 +1,166 @@
+import { sql } from 'drizzle-orm';
+import {
+  sqliteTable, integer, text, real, primaryKey, uniqueIndex, index, check,
+} from 'drizzle-orm/sqlite-core';
+import { LIMITS } from '../lib/limits.js';
+
+// SQLite 不會檢查 VARCHAR 長度，所以用 CHECK 限制字數與可用值
+const maxLen = (name, column, max) => check(name, sql`length(${column}) <= ${sql.raw(String(max))}`);
+const oneOf = (name, column, values) => check(name, sql`${column} in (${sql.raw(values.map((v) => (typeof v === 'number' ? v : `'${v}'`)).join(', '))})`);
+
+const now = () => new Date().toISOString();
+const createdAt = () => text('created_at').notNull().$defaultFn(now);
+const updatedAt = () => text('updated_at').notNull().$defaultFn(now).$onUpdateFn(now);
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  username: text('username').notNull(),
+  passwordHash: text('password_hash').notNull(),
+  displayName: text('display_name').notNull(),
+  email: text('email'),
+  role: text('role').notNull().default('member'),
+  color: text('color').notNull().default('#0078d4'),
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  uniqueIndex('users_username').on(t.username),
+  maxLen('users_username_len', t.username, LIMITS.username),
+  maxLen('users_display_name_len', t.displayName, LIMITS.displayName),
+  maxLen('users_email_len', t.email, LIMITS.email),
+  maxLen('users_color_len', t.color, 7),
+  oneOf('users_role', t.role, ['admin', 'member']),
+]);
+
+export const plans = sqliteTable('plans', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  description: text('description'),
+  color: integer('color').notNull().default(0),
+  ownerId: integer('owner_id').references(() => users.id, { onDelete: 'set null' }),
+  labelNames: text('label_names', { mode: 'json' }).notNull().$type().default({}),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  maxLen('plans_name_len', t.name, LIMITS.planName),
+  maxLen('plans_description_len', t.description, LIMITS.planDescription),
+  maxLen('plans_label_names_len', t.labelNames, LIMITS.labelNamesJson),
+  check('plans_color_range', sql`${t.color} between 0 and 255`),
+]);
+
+export const planMembers = sqliteTable('plan_members', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  planId: integer('plan_id').notNull().references(() => plans.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: text('role').notNull().default('member'),
+  pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+  lastViewedAt: text('last_viewed_at'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  uniqueIndex('plan_members_plan_user').on(t.planId, t.userId),
+  index('plan_members_user').on(t.userId),
+  oneOf('plan_members_role', t.role, ['owner', 'member']),
+]);
+
+export const buckets = sqliteTable('buckets', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  planId: integer('plan_id').notNull().references(() => plans.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  sortOrder: real('sort_order').notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('buckets_plan').on(t.planId),
+  maxLen('buckets_name_len', t.name, LIMITS.bucketName),
+]);
+
+export const tasks = sqliteTable('tasks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  planId: integer('plan_id').notNull().references(() => plans.id, { onDelete: 'cascade' }),
+  bucketId: integer('bucket_id').references(() => buckets.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  notes: text('notes'),
+  progress: integer('progress').notNull().default(0), // 0 未開始 / 50 進行中 / 100 已完成
+  priority: integer('priority').notNull().default(5), // 1 緊急 / 3 重要 / 5 中 / 9 低
+  startDate: text('start_date'), // YYYY-MM-DD
+  dueDate: text('due_date'),
+  sortOrder: real('sort_order').notNull().default(0),
+  previewType: text('preview_type').notNull().default('automatic'),
+  labels: text('labels', { mode: 'json' }).notNull().$type().default([]),
+  completedAt: text('completed_at'),
+  completedById: integer('completed_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('tasks_plan').on(t.planId),
+  index('tasks_bucket').on(t.bucketId),
+  maxLen('tasks_title_len', t.title, LIMITS.taskTitle),
+  maxLen('tasks_notes_len', t.notes, LIMITS.taskNotes),
+  maxLen('tasks_labels_len', t.labels, 80),
+  oneOf('tasks_progress', t.progress, [0, 50, 100]),
+  oneOf('tasks_priority', t.priority, [1, 3, 5, 9]),
+  oneOf('tasks_preview_type', t.previewType, ['automatic', 'noPreview', 'checklist', 'description', 'reference']),
+]);
+
+export const taskAssignees = sqliteTable('task_assignees', {
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+}, (t) => [
+  primaryKey({ columns: [t.taskId, t.userId] }),
+  index('task_assignees_user').on(t.userId),
+]);
+
+export const checklistItems = sqliteTable('checklist_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  isChecked: integer('is_checked', { mode: 'boolean' }).notNull().default(false),
+  sortOrder: real('sort_order').notNull().default(0),
+}, (t) => [
+  index('checklist_items_task').on(t.taskId),
+  maxLen('checklist_items_title_len', t.title, LIMITS.checklistTitle),
+]);
+
+export const attachments = sqliteTable('attachments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  type: text('type').notNull().default('link'),
+  name: text('name').notNull(),
+  url: text('url').notNull(),
+  storageKey: text('storage_key'), // R2 物件 key（type = file 時）
+  mimeType: text('mime_type'),
+  size: integer('size'),
+  createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('attachments_task').on(t.taskId),
+  oneOf('attachments_type', t.type, ['link', 'file']),
+  maxLen('attachments_name_len', t.name, LIMITS.attachmentName),
+  maxLen('attachments_url_len', t.url, LIMITS.attachmentUrl),
+  maxLen('attachments_mime_len', t.mimeType, 127),
+]);
+
+export const comments = sqliteTable('comments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }), // 使用者刪除後保留意見
+  content: text('content').notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('comments_task').on(t.taskId),
+  maxLen('comments_content_len', t.content, LIMITS.comment),
+]);
+
+export const myDayItems = sqliteTable('my_day_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  date: text('date').notNull(), // YYYY-MM-DD
+}, (t) => [
+  uniqueIndex('my_day_items_user_task_date').on(t.userId, t.taskId, t.date),
+  index('my_day_items_task').on(t.taskId),
+]);

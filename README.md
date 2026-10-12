@@ -1,24 +1,30 @@
-# Planner
+# Planner（Cloudflare 版）
 
 仿 **Microsoft Planner** 的團隊工作管理系統。用「計劃 → 貯體 → 工作」的方式管理專案，介面和操作盡量和 Microsoft Planner 相同：看板拖曳、格線、排程行事曆、圖表、我的一天、我的工作等。
+
+這個分支（`cloudflare`）部署在 **Cloudflare Workers + D1 + R2**，不需要自己的伺服器或資料庫。
+（本機 MySQL + Express + PM2 的版本在 `main` 分支。）
 
 | 層 | 技術 |
 | --- | --- |
 | 前端 | Vue 3、Vite、Tailwind CSS 4、Pinia、Vue Router、vuedraggable |
-| 後端 | Node.js、Express 5、Sequelize 6、MySQL / MariaDB、JWT |
-| 部署 | 前端 build 後由 Express 一併提供，使用 PM2 常駐 |
+| API | Cloudflare Workers、Hono、Drizzle ORM、JWT |
+| 資料庫 | Cloudflare D1（SQLite） |
+| 附件檔案 | Cloudflare R2 |
+| 前端託管 | Workers Static Assets（與 API 同一個 Worker） |
 
 ---
 
 ## 目錄
 
 - [環境需求](#環境需求)
-- [安裝與啟動](#安裝與啟動)
+- [部署到 Cloudflare](#部署到-cloudflare)
+- [本機開發](#本機開發)
 - [預設帳號](#預設帳號)
 - [使用說明](#使用說明)
 - [常用指令](#常用指令)
-- [開發模式](#開發模式)
 - [專案結構](#專案結構)
+- [資料表](#資料表)
 - [常見問題](#常見問題)
 
 ---
@@ -26,65 +32,105 @@
 ## 環境需求
 
 - **Node.js** 20 以上
-- **MySQL 5.7+** 或 **MariaDB 10.4+**
-- **PM2**：`npm install -g pm2`
+- **Cloudflare 帳號**（免費方案即可開始，見[常見問題](#常見問題)關於 CPU 時間的說明）
 
-## 安裝與啟動
+## 部署到 Cloudflare
 
 ### 1. 下載專案並安裝套件
 
 ```bash
-git clone https://github.com/chenyu-0721/planner.git
+git clone -b cloudflare https://github.com/chenyu-0721/planner.git
 cd planner
 npm run install:all
 ```
 
-### 2. 設定資料庫連線
-
-複製 `backend/.env.example` 為 `backend/.env`，依照你的環境修改：
-
-```ini
-PORT=8080                 # 服務埠號（PM2 啟動時以 ecosystem.config.js 的 PORT 為準）
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
-DB_PASS=你的資料庫密碼
-DB_NAME=planner           # 資料庫名稱，不存在會自動建立
-JWT_SECRET=請改成一串隨機字串
-JWT_EXPIRES_IN=7d         # 登入有效期間
-```
-
-### 3. 建立資料庫與預設資料
+### 2. 登入 Cloudflare
 
 ```bash
-npm run setup
+cd worker
+npx wrangler login
 ```
 
-這個指令會依序：建立資料庫 → 建立資料表 → 執行 seed（建立預設管理員帳號）。seed 執行過會記錄下來，重複執行不會產生重複資料。
+瀏覽器會開啟 Cloudflare 授權頁面，登入並允許即可。
 
-### 4. Build 前端並啟動
+### 3. 建立 D1 資料庫
 
 ```bash
-npm run build     # 前端輸出到 backend/public
-npm start         # 以 PM2 啟動
+npx wrangler d1 create planner-db
 ```
 
-打開瀏覽器進入 **http://localhost:8080** 即可使用。
+把輸出的 `database_id` 填進 `worker/wrangler.jsonc`：
 
-### 5.（選用）開機自動啟動
-
-**Windows**：
-
-```bash
-npm run startup:install      # 登入 Windows 時自動啟動 planner
-npm run startup:uninstall    # 取消
+```jsonc
+"d1_databases": [
+  {
+    "binding": "DB",
+    "database_name": "planner-db",
+    "database_id": "這裡換成你的 database_id",
+    "migrations_dir": "migrations"
+  }
+]
 ```
 
-**Linux / macOS**：
+### 4. 建立 R2 bucket（存放附件）
 
 ```bash
-pm2 startup     # 依畫面提示執行輸出的指令
-pm2 save
+npx wrangler r2 bucket create planner-uploads
+```
+
+> 第一次使用 R2 需要先在 Cloudflare 後台的 R2 頁面啟用（免費額度內不收費，但啟用時可能要求綁定付款方式）。
+
+### 5. 設定 JWT 金鑰
+
+```bash
+npx wrangler secret put JWT_SECRET
+```
+
+輸入一串夠長的隨機字串（例如 64 個英數字）。這是登入 token 的簽章金鑰，不要外流。
+
+### 6. 建立資料表與預設管理員
+
+```bash
+npx wrangler d1 migrations apply planner-db --remote
+```
+
+### 7. Build 前端並部署
+
+回到專案根目錄：
+
+```bash
+cd ..
+npm run deploy
+```
+
+完成後會顯示網址，例如 `https://planner.<你的帳號>.workers.dev`，用預設帳號登入即可。
+
+> 要使用自己的網域，可到 Cloudflare 後台 → Workers & Pages → planner → 設定 → 網域與路由，新增自訂網域。
+
+### 之後更新程式
+
+```bash
+git pull
+npm run install:all
+npm run db:migrate:remote   # 有新的 migration 時才需要
+npm run deploy
+```
+
+## 本機開發
+
+本機會用 Wrangler 模擬 D1 與 R2，資料存在 `worker/.wrangler/`，不會動到正式環境。
+
+```bash
+cp worker/.dev.vars.example worker/.dev.vars   # 設定本機用的 JWT_SECRET
+npm run db:migrate:local                       # 建立本機資料表與預設管理員
+npm run dev                                    # build 前端並啟動 http://localhost:8787
+```
+
+要即時修改前端時，開兩個終端機：
+
+```bash
+npm run dev:worker      # API http://localhost:8787
+npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動轉到 8787）
 ```
 
 ---
@@ -99,7 +145,7 @@ pm2 save
 
 其他使用者請由管理員登入後，在 **「使用者管理」** 建立（見下方[使用者管理](#使用者管理管理員)）。
 
-> ⚠️ 第一次登入後，請到「使用者管理」→「變更我的密碼」修改預設密碼。
+> ⚠️ 部署後請立即登入，到「使用者管理」→「變更我的密碼」修改預設密碼。
 
 ---
 
@@ -184,7 +230,7 @@ pm2 save
 | **新增使用者** | 右上「＋ 新增使用者」→ 填入帳號（3~50 個英文、數字或 `_ . -`）、顯示名稱、電子郵件（選用）、密碼（至少 6 字元）與確認密碼、角色（會員 / 管理員） |
 | **查詢使用者** | 上方搜尋框可依帳號、名稱、電子郵件搜尋，也可依角色篩選 |
 | **編輯使用者** | 該列的 ✎：修改顯示名稱、電子郵件、角色、啟用 / 停用；「新密碼」欄填入即可替該使用者重設密碼，留白則不變更 |
-| **刪除使用者** | 該列的 🗑：刪除後，其計劃成員資格與工作指派會一併移除 |
+| **刪除使用者** | 該列的 🗑：刪除後，其計劃成員資格與工作指派會一併移除，留過的意見會保留 |
 | **變更自己的密碼** | 右上「變更我的密碼」→ 輸入目前密碼與新密碼（也可從頭像 →「我的帳戶」→「變更密碼」） |
 
 注意事項：
@@ -202,115 +248,101 @@ pm2 save
 
 | 指令 | 說明 |
 | --- | --- |
-| `npm run install:all` | 安裝前後端套件 |
-| `npm run setup` | 建立資料庫、資料表並執行 seed |
-| `npm run build` | Build 前端到 `backend/public` |
-| `npm start` | PM2 啟動（也可直接 `pm2 start ecosystem.config.js`） |
-| `npm run restart` / `npm run stop` | PM2 重啟 / 停止 |
-| `npm run logs` | 查看 PM2 log（也寫在 `backend/logs/`） |
-| `npm run startup:install` / `startup:uninstall` | Windows 開機自動啟動 / 取消 |
+| `npm run install:all` | 安裝前端與 Worker 套件 |
+| `npm run build` | Build 前端到 `worker/public` |
+| `npm run dev` | Build 前端並在本機啟動 Worker（http://localhost:8787） |
+| `npm run dev:worker` / `npm run dev:frontend` | 分開啟動 Worker / 前端開發伺服器 |
+| `npm run db:migrate:local` | 套用 migration 到本機 D1 |
+| `npm run db:migrate:remote` | 套用 migration 到正式 D1 |
+| `npm run deploy` | Build 前端並部署到 Cloudflare |
 
-在 `backend/` 執行：
+在 `worker/` 執行：
 
 | 指令 | 說明 |
 | --- | --- |
-| `npm run reset-password -- <帳號> <新密碼>` | 重設指定帳號的密碼 |
-| `npm run db:sync:alter` | 依 model 調整資料表結構（改了 model 後使用） |
-| `npm run db:seed` | 執行 seed |
-| `npm run db:reset` | ⚠️ 清空所有資料表並重新 seed |
-
-**更新程式後**：
-
-```bash
-git pull
-npm run install:all
-npm run build
-npm run restart
-```
-
----
-
-## 開發模式
-
-開兩個終端機：
-
-```bash
-npm run dev:backend     # 後端 http://localhost:8080（修改自動重啟）
-npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動轉到 8080）
-```
-
-開發時請打開 http://localhost:5173 。
+| `npm run reset-password -- <帳號> <新密碼>` | 重設本機 D1 的使用者密碼 |
+| `npm run reset-password -- <帳號> <新密碼> --remote` | 重設正式環境的使用者密碼 |
+| `npm run db:generate` | 修改 `src/db/schema.js` 後產生新的 migration SQL |
+| `npx wrangler tail` | 即時查看正式環境的 log |
 
 ## 專案結構
 
 ```
 planner/
-├── ecosystem.config.js      PM2 設定（名稱 planner、port 8080）
-├── package.json             根目錄快捷指令
-├── scripts/
-│   └── install-startup.js   Windows 開機自動啟動
-├── backend/
-│   ├── .env.example         環境變數範本
-│   ├── ecosystem.config.js  PM2 設定（在 backend 目錄啟動用）
-│   ├── scripts/             建立資料庫、同步資料表、重設密碼
-│   ├── seeders/             預設管理員帳號
-│   ├── uploads/             附件上傳目錄
-│   ├── public/              前端 build 輸出（自動產生）
+├── package.json               根目錄快捷指令
+├── frontend/                  Vue 3 前端
+│   ├── vite.config.js         build 輸出到 ../worker/public
 │   └── src/
-│       ├── server.js        Express 進入點
-│       ├── config/          資料庫設定
-│       ├── models/          Sequelize models
-│       ├── middleware/      JWT 驗證
-│       ├── routes/          API（auth、users、plans、buckets、tasks、me）
-│       └── utils/
-└── frontend/
-    ├── vite.config.js       build 輸出到 ../backend/public
+│       ├── views/             頁面（登入、我的一天、我的工作、我的計劃、計劃、使用者管理）
+│       ├── components/        卡片、工作詳細資料、各種選取器
+│       │   └── plan/          面板、格線、排程、圖表、篩選、成員
+│       ├── stores/            Pinia（auth、plans、plan、ui）
+│       ├── router/  api/  utils/
+└── worker/                    Cloudflare Worker
+    ├── wrangler.jsonc         Worker 設定（D1、R2、靜態資源、環境變數）
+    ├── drizzle.config.js
+    ├── .dev.vars.example      本機開發用的 JWT_SECRET 範本
+    ├── migrations/            D1 migration（0000 建表、0001 預設管理員）
+    ├── scripts/
+    │   └── reset-password.js  重設密碼工具
+    ├── public/                前端 build 輸出（自動產生）
     └── src/
-        ├── views/           頁面（登入、我的一天、我的工作、我的計劃、計劃、使用者管理）
-        ├── components/      卡片、工作詳細資料、各種選取器
-        │   └── plan/        面板、格線、排程、圖表、篩選、成員
-        ├── stores/          Pinia（auth、plans、plan、ui）
-        ├── router/
-        ├── api/             axios
-        └── utils/
+        ├── index.js           Hono 進入點、附件下載、錯誤處理
+        ├── db/schema.js       Drizzle 資料表定義
+        ├── lib/               JWT、密碼雜湊、欄位長度限制、共用查詢
+        └── routes/            API（auth、users、plans、buckets、tasks、me）
 ```
 
 ## 資料表
 
 | 資料表 | 說明 | 主要欄位（長度上限） |
 | --- | --- | --- |
-| `users` | 使用者 | 帳號 50、顯示名稱 50、電子郵件 100、密碼雜湊 char(60) |
+| `users` | 使用者 | 帳號 50、顯示名稱 50、電子郵件 100 |
 | `plans` | 計劃 | 名稱 100、描述 500、標籤名稱（JSON）1500 |
 | `plan_members` | 計劃成員 | 角色（owner / member）、是否釘選 |
 | `buckets` | 貯體 | 名稱 100 |
-| `tasks` | 工作 | 名稱 200、附註 text（10000 字）、進度 / 優先順序 tinyint、標籤（JSON）80 |
+| `tasks` | 工作 | 名稱 200、附註 10000、進度、優先順序、標籤（JSON）80 |
 | `task_assignees` | 工作指派 | 主鍵 (task_id, user_id) |
 | `checklist_items` | 檢查清單 | 項目 100 |
-| `attachments` | 附件 | 名稱 200、網址 1000 |
-| `comments` | 意見 | 內容 2000 |
+| `attachments` | 附件 | 名稱 200、網址 1000、R2 key |
+| `comments` | 意見 | 內容 2000（使用者刪除後意見保留） |
 | `my_day_items` | 我的一天 | 使用者、工作、日期 |
 
-欄位長度上限定義在 `backend/src/models/index.js` 的 `LIMITS`，超過時 API 會回傳 400 與錯誤訊息，前端輸入框也有相同的字數限制。修改 model 後執行 `npm run db:sync:alter`（在 `backend/`）同步資料表結構。
+D1 是 SQLite，不會檢查欄位長度，所以長度與可用值都用 **CHECK 限制** 寫在資料表上；API 也會先檢查並回傳清楚的錯誤訊息，前端輸入框有相同的字數上限。上限定義在 `worker/src/lib/limits.js`。
+
+密碼使用 **PBKDF2-SHA256**（Web Crypto）雜湊，每個密碼有獨立的 salt。
 
 ## 常見問題
 
-**啟動後連不上 / 顯示「資料庫連線失敗」**
-檢查 `backend/.env` 的 `DB_HOST`、`DB_USER`、`DB_PASS` 是否正確，以及 MySQL / MariaDB 是否已啟動。可用 `npm run logs` 查看錯誤。
+**免費方案可以用嗎？**
+可以，但要注意 CPU 時間：Workers 免費方案每次請求的 CPU 上限是 10ms，而登入、變更密碼時的密碼雜湊（PBKDF2 100,000 次）大約需要 15ms，可能偶爾被中斷。解決方式二選一：
 
-**打開網頁顯示「前端尚未 build」**
-在根目錄執行 `npm run build`。
+- 升級 Workers 付費方案（每月 5 美元），CPU 上限大幅提高 —— 建議
+- 在 `worker/wrangler.jsonc` 把 `PBKDF2_ITERATIONS` 調低（例如 `"50000"`），之後新設定的密碼會使用新的次數；安全性會稍微降低
 
-**Port 8080 被佔用 / 想換 port**
-修改 `ecosystem.config.js`（以及 `backend/ecosystem.config.js`、`backend/.env`）的 `PORT`，再執行：
+其他操作（看板、工作、附件等）CPU 用量都很低，不受影響。
+
+**「我的一天」是用哪個時區？**
+由 `wrangler.jsonc` 的 `TIMEZONE` 決定（預設 `Asia/Taipei`），每天在該時區的午夜清空。
+
+**部署後打開網頁顯示錯誤 / 無法登入**
+
+- 確認 `wrangler.jsonc` 的 `database_id` 已換成自己的
+- 確認已執行 `npx wrangler secret put JWT_SECRET`
+- 確認已執行 `npx wrangler d1 migrations apply planner-db --remote`
+- 用 `npx wrangler tail` 查看即時 log
+
+**忘記管理員密碼**
+在 `worker/` 執行：
 
 ```bash
-pm2 delete planner
-npm start
+npm run reset-password -- admin 新密碼 --remote
 ```
 
-**忘記密碼**
-一般使用者可請管理員在「使用者管理」重設。管理員忘記密碼時，在 `backend/` 執行：
+**怎麼備份資料？**
 
 ```bash
-npm run reset-password -- admin 新密碼
+npx wrangler d1 export planner-db --remote --output=backup.sql
 ```
+
+D1 也有 Time Travel，可以還原到過去一段時間內的任一時間點（付費方案 30 天、免費方案 7 天）（`npx wrangler d1 time-travel`）。

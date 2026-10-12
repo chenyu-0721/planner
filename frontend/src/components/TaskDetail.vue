@@ -206,7 +206,7 @@
             <Avatar :user="c.user" :size="32" />
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 text-xs">
-                <span class="font-semibold text-ink">{{ c.user?.displayName }}</span>
+                <span class="font-semibold text-ink">{{ c.user?.displayName || '已刪除的使用者' }}</span>
                 <span class="text-ink-4">{{ fmtDateTime(c.createdAt) }}</span>
                 <button v-if="c.userId === auth.user?.id || auth.isAdmin" class="ml-auto text-ink-4 hover:text-[#c50f1f] opacity-0 group-hover/cm:opacity-100 cursor-pointer" @click="removeComment(c)">刪除</button>
               </div>

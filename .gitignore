@@ -1,25 +1,27 @@
 # 套件
 node_modules/
 
-# 環境變數（含資料庫密碼、JWT 金鑰）
+# 機密設定（JWT_SECRET 等）
 .env
 .env.*
-!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 
 # 前端 build 輸出（由 npm run build 產生）
-backend/public/
+worker/public/
 frontend/dist/
 
-# 上傳檔案與 log
-backend/uploads/*
-!backend/uploads/.gitkeep
-backend/logs/
+# Wrangler 本機資料（本機 D1 / R2）
+.wrangler/
+
+# log
 logs/
 *.log
 npm-debug.log*
 
-# 本機產生的開機腳本
-scripts/*.vbs
+# 舊版 Express 後端殘留（main 分支使用）
+backend/
 
 # 編輯器 / 系統
 .vscode/

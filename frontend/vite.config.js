@@ -10,14 +10,14 @@ export default defineConfig({
   },
   build: {
     // build 結果直接輸出到後端，由 Express 提供
-    outDir: '../backend/public',
+    outDir: '../worker/public',
     emptyOutDir: true,
   },
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:8080',
-      '/uploads': 'http://localhost:8080',
+      '/api': 'http://localhost:8787',
+      '/uploads': 'http://localhost:8787',
     },
   },
 });

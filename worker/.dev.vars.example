@@ -1,0 +1,2 @@
+# 本機開發用（wrangler dev 會讀取），正式環境請用 npx wrangler secret put JWT_SECRET
+JWT_SECRET=change_me_to_a_long_random_string

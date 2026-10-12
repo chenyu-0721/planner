@@ -1,0 +1,45 @@
+import { HttpError } from './errors.js';
+
+// 各欄位長度上限（資料表 CHECK 與前端輸入框使用相同數值）
+export const LIMITS = {
+  username: 50,
+  displayName: 50,
+  email: 100,
+  planName: 100,
+  planDescription: 500,
+  labelName: 50,
+  labelNamesJson: 1500,
+  bucketName: 100,
+  taskTitle: 200,
+  taskNotes: 10000,
+  checklistTitle: 100,
+  attachmentName: 200,
+  attachmentUrl: 1000,
+  comment: 2000,
+};
+
+export const USERNAME_RE = /^[A-Za-z0-9_.-]{3,50}$/;
+export const MIN_PASSWORD = 6;
+export const PROGRESS_VALUES = [0, 50, 100];
+export const PRIORITY_VALUES = [1, 3, 5, 9];
+export const PREVIEW_TYPES = ['automatic', 'noPreview', 'checklist', 'description', 'reference'];
+
+// 檢查必填與長度，回傳 trim 後的字串
+export function requireText(value, max, label) {
+  const s = String(value ?? '').trim();
+  if (!s) throw new HttpError(400, `請輸入${label}`);
+  if (s.length > max) throw new HttpError(400, `${label}不可超過 ${max} 個字`);
+  return s;
+}
+
+export function optionalText(value, max, label) {
+  if (value == null) return null;
+  const s = String(value);
+  if (s.length > max) throw new HttpError(400, `${label}不可超過 ${max} 個字`);
+  return s;
+}
+
+export function checkPassword(pw) {
+  if (!pw || String(pw).length < MIN_PASSWORD) throw new HttpError(400, `密碼至少 ${MIN_PASSWORD} 個字元`);
+  return String(pw);
+}
