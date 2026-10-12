@@ -76,10 +76,10 @@ body {
     @apply inline-flex items-center justify-center rounded size-8 text-ink-2 hover:bg-black/5 cursor-pointer transition-colors;
   }
   .input {
-    @apply w-full h-8 rounded border border-line-2 bg-white px-2.5 text-sm outline-none transition-colors placeholder:text-ink-4 hover:border-ink-4 focus:border-accent focus:shadow-[inset_0_-1px_0_0_var(--color-accent)];
+    @apply w-full h-8 rounded border border-line-2 bg-white px-2.5 text-sm outline-none transition-colors placeholder:text-ink-4 hover:border-ink-4 focus:border-accent focus:shadow-[inset_0_-1px_0_0_var(--color-accent)] disabled:bg-canvas disabled:text-ink-4 disabled:border-line disabled:cursor-not-allowed;
   }
   .select {
-    @apply pr-7 appearance-none bg-no-repeat cursor-pointer;
+    @apply pr-7 appearance-none bg-no-repeat cursor-pointer disabled:cursor-not-allowed;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23616161' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-size: 14px;
     background-position: right 8px center;

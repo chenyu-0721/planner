@@ -22,22 +22,26 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <div class="col-span-2 sm:col-span-1">
-          <label class="field-label">日期</label>
-          <select v-model="form.date" class="input select">
-            <option :value="null">未排入日期</option>
-            <option v-for="d in days" :key="d.date" :value="d.date">{{ d.title }}　{{ d.subtitle }}</option>
-          </select>
+      <div>
+        <label class="field-label">日期</label>
+        <select v-model="form.date" class="input select">
+          <option :value="null">未排入日期</option>
+          <option v-for="d in days" :key="d.date" :value="d.date">{{ d.title }}・{{ d.subtitle }}</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="field-label">開始時間</label>
+            <input v-model="form.startTime" type="time" class="input" :disabled="!form.date" />
+          </div>
+          <div>
+            <label class="field-label">結束時間</label>
+            <input v-model="form.endTime" type="time" class="input" :disabled="!form.date" :min="form.startTime || undefined" />
+          </div>
         </div>
-        <div>
-          <label class="field-label">開始時間</label>
-          <input v-model="form.startTime" type="time" class="input" :disabled="!form.date" />
-        </div>
-        <div>
-          <label class="field-label">結束時間</label>
-          <input v-model="form.endTime" type="time" class="input" :disabled="!form.date" :min="form.startTime || undefined" />
-        </div>
+        <p v-if="!form.date" class="mt-1 text-xs text-ink-4">選擇日期後才能設定時間</p>
       </div>
 
       <div>
