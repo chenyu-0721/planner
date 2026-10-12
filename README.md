@@ -251,7 +251,9 @@ npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動
 | 功能 | 說明 |
 | --- | --- |
 | 依時程連線 | 每天的地點依順序以該天顏色連線，跨天以虛線連接；圖標上的數字是當天順序 |
-| 道路路線 | 選擇「開車 / 騎車 / 步行」會沿實際道路規劃，並顯示每段與每天的距離、時間；「直線」只畫直線 |
+| 交通方式 | 上方「路線」選行程預設（開車 / 機車 / 腳踏車 / 步行 / 直線）；**每一段都可個別設定**：點兩個地點之間的交通方式即可切換（例如台北→台中搭高鐵，之後改騎機車） |
+| 道路路線 | 開車、機車、腳踏車、步行會沿實際道路規劃，顯示每段與每天的距離、時間；**機車會避開國道** |
+| 高鐵 / 火車 | 以鐵路樣式的線連接兩站，**依直線距離估算時間**（高鐵約時速 165 公里、火車約 60 公里），並提供「查班次」連結到 Google 地圖查詢實際班次 |
 | 底圖 | 右上角切換「地圖」（臺灣通用電子地圖）、「衛星」（正射影像）、「OSM」 |
 | 我的位置 | 右下角定位按鈕（需允許瀏覽器定位） |
 | Google 地圖導航 | 每天標題旁的 ↗ 會用 Google 地圖開啟當天路線（手機會開啟 Google 地圖 App） |
@@ -267,7 +269,8 @@ npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動
 | 臺灣通用電子地圖、正射影像 | 底圖 | [內政部國土測繪中心](https://maps.nlsc.gov.tw/)（政府資料開放授權） |
 | OpenStreetMap | 底圖 | [OpenStreetMap](https://www.openstreetmap.org/copyright) |
 | Photon | 地點搜尋建議（固定使用當地中文名稱） | [komoot](https://photon.komoot.io/) |
-| OSRM | 道路路線、距離、時間 | [FOSSGIS](https://routing.openstreetmap.de/) |
+| OSRM | 開車、腳踏車、步行路線 | [FOSSGIS](https://routing.openstreetmap.de/) |
+| Valhalla | 機車路線（避開國道） | [FOSSGIS](https://valhalla1.openstreetmap.de/) |
 
 這些都是公益性質的免費服務，適合個人或小團隊使用；若使用量很大，建議改用付費服務商。
 
@@ -336,7 +339,7 @@ planner/
     ├── wrangler.jsonc         Worker 設定（D1、R2、靜態資源、環境變數）
     ├── drizzle.config.js
     ├── .dev.vars.example      本機開發用的 JWT_SECRET 範本
-    ├── migrations/            D1 migration（0000 建表、0001 預設管理員、0002 行程）
+    ├── migrations/            D1 migration（0000 建表、0001 預設管理員、0002 行程、0003 交通方式）
     ├── scripts/
     │   └── reset-password.js  重設密碼工具
     ├── public/                前端 build 輸出（自動產生）
@@ -363,7 +366,7 @@ planner/
 | `my_day_items` | 我的一天 | 使用者、工作、日期 |
 | `trips` | 行程 | 名稱 100、描述 500、開始 / 結束日期、交通方式 |
 | `trip_members` | 行程成員 | 角色（owner / member） |
-| `trip_stops` | 行程地點 | 名稱 100、圖標類別、日期、時間、經緯度、地址 200、備註 1000、花費 |
+| `trip_stops` | 行程地點 | 名稱 100、圖標類別、日期、時間、經緯度、地址 200、備註 1000、花費、抵達的交通方式 |
 
 D1 是 SQLite，不會檢查欄位長度，所以長度與可用值都用 **CHECK 限制** 寫在資料表上；API 也會先檢查並回傳清楚的錯誤訊息，前端輸入框有相同的字數上限。上限定義在 `worker/src/lib/limits.js`。
 

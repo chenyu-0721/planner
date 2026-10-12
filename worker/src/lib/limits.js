@@ -29,7 +29,9 @@ export const PROGRESS_VALUES = [0, 50, 100];
 export const PRIORITY_VALUES = [1, 3, 5, 9];
 export const STOP_CATEGORIES = ['sight', 'food', 'hotel', 'transport', 'shopping', 'activity', 'other'];
 export const MAX_TRIP_DAYS = 60;
-export const TRAVEL_MODES = ['car', 'bike', 'foot', 'straight'];
+// 交通方式：每一段可個別設定；行程預設只能選道路類（高鐵 / 火車只適用於單一路段）
+export const TRAVEL_MODES = ['car', 'scooter', 'bike', 'foot', 'hsr', 'train', 'straight'];
+export const DEFAULT_TRAVEL_MODES = ['car', 'scooter', 'bike', 'foot', 'straight'];
 export const PREVIEW_TYPES = ['automatic', 'noPreview', 'checklist', 'description', 'reference'];
 
 // 檢查必填與長度，回傳 trim 後的字串

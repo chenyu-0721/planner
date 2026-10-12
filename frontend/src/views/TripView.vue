@@ -111,7 +111,7 @@
         <div class="flex items-center gap-2 px-3 pt-2 bg-white">
           <span class="text-xs text-ink-3 shrink-0">路線</span>
           <div class="flex gap-1 overflow-x-auto no-scrollbar">
-            <button v-for="m in TRAVEL_MODES" :key="m.key" class="chip !h-7" :class="trip.travelMode === m.key ? 'chip-on' : ''" @click="setTravelMode(m.key)">
+            <button v-for="m in DEFAULT_TRAVEL_MODES" :key="m.key" class="chip !h-7" :class="trip.travelMode === m.key ? 'chip-on' : ''" @click="setTravelMode(m.key)">
               <span>{{ m.emoji }}</span>{{ m.label }}
             </button>
           </div>
@@ -135,7 +135,7 @@
               <span class="text-xs text-ink-3">{{ g.subtitle }}</span>
               <div class="flex-1"></div>
               <span v-if="g.distance" class="text-xs text-ink-3 flex items-center gap-1">
-                <Icon name="route" :size="12" />{{ fmtDistance(g.distance) }}<template v-if="g.duration">・{{ fmtDuration(g.duration) }}</template>
+                <Icon name="route" :size="12" />{{ fmtDistance(g.distance) }}<template v-if="g.duration">・{{ g.legs?.some((l) => l.estimated) ? '約 ' : '' }}{{ fmtDuration(g.duration) }}</template>
               </span>
               <span v-if="g.cost" class="text-xs text-ink-3">{{ fmtCost(g.cost) }}</span>
               <a
@@ -192,12 +192,46 @@
                       <Icon name="pencil" :size="14" />
                     </button>
                   </div>
-                  <div v-if="g.numbered && index < g.stops.length - 1" class="flex items-center gap-1 pl-[18px] h-5 text-[11px] text-ink-4">
-                    <span class="w-px h-full" :style="{ background: g.color }"></span>
-                    <span class="ml-2">
-                      <template v-if="g.legs?.[index]">{{ travelModeInfo(trip.travelMode).emoji }} {{ fmtDuration(g.legs[index].duration) }}・{{ fmtDistance(g.legs[index].distance) }}</template>
-                      <template v-else>直線 {{ fmtDistance(distanceKm(s, g.stops[index + 1])) }}</template>
-                    </span>
+                  <div v-if="g.numbered && index < g.stops.length - 1" class="flex items-stretch pl-[18px] min-h-7">
+                    <span class="w-px shrink-0" :style="{ background: g.color }"></span>
+                    <div class="flex items-center gap-1 flex-wrap ml-1.5 py-0.5 text-xs">
+                      <Popover close-on-click>
+                        <template #trigger>
+                          <button
+                            class="inline-flex items-center gap-1 h-6 px-1.5 rounded text-ink-3 hover:bg-black/5 hover:text-ink cursor-pointer"
+                            :class="g.stops[index + 1].arriveMode ? 'text-ink-2 font-semibold' : ''"
+                            title="變更這段的交通方式"
+                          >
+                            <span>{{ segMode(g, index).emoji }}</span>{{ segLabel(g, index) }}
+                            <Icon name="chevron-down" :size="12" />
+                          </button>
+                        </template>
+                        <div class="w-56">
+                          <div class="px-3 pt-1.5 pb-1 text-xs text-ink-3 truncate">前往「{{ g.stops[index + 1].title }}」</div>
+                          <button class="menu-item" @click="setArriveMode(g.stops[index + 1], null)">
+                            <span class="w-4"><Icon v-if="!g.stops[index + 1].arriveMode" name="check" :size="14" class="text-accent" /></span>
+                            跟隨行程預設（{{ travelModeInfo(trip.travelMode).label }}）
+                          </button>
+                          <div class="border-t border-line my-1"></div>
+                          <button v-for="m in TRAVEL_MODES" :key="m.key" class="menu-item" @click="setArriveMode(g.stops[index + 1], m.key)">
+                            <span class="w-4"><Icon v-if="g.stops[index + 1].arriveMode === m.key" name="check" :size="14" class="text-accent" /></span>
+                            <span>{{ m.emoji }}</span>{{ m.label }}
+                            <span v-if="m.kind === 'rail'" class="ml-auto text-[11px] text-ink-4">依距離估算</span>
+                          </button>
+                        </div>
+                      </Popover>
+                      <a
+                        v-if="travelModeInfo(segMode(g, index).key).kind === 'rail'"
+                        :href="googleSegmentUrl(s, g.stops[index + 1], segMode(g, index).key)"
+                        target="_blank"
+                        rel="noopener"
+                        class="inline-flex items-center gap-0.5 h-6 px-1 rounded text-accent hover:underline"
+                        title="在 Google 地圖查詢實際班次"
+                        @click.stop
+                      >
+                        查班次<Icon name="external" :size="11" />
+                      </a>
+                    </div>
                   </div>
                 </div>
               </template>
@@ -246,7 +280,7 @@ import { sortOrderAt } from '@/utils/planner';
 import {
   tripDays, fmtTripRange, categoryInfo, distanceKm, fmtDistance, fmtCost, byStopOrder,
   sortOrderForTime, searchPlaces, UNSCHEDULED_COLOR,
-  TRAVEL_MODES, travelModeInfo, fetchRoute, fmtDuration, googleDirectionsUrl,
+  TRAVEL_MODES, DEFAULT_TRAVEL_MODES, travelModeInfo, planDayRoute, fmtDuration, googleDirectionsUrl, googleSegmentUrl,
 } from '@/utils/trip';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
@@ -299,7 +333,7 @@ const groups = computed(() => {
       cost: dayStops.reduce((sum, s) => sum + (s.cost || 0), 0),
       legs: route?.legs,
       distance: route ? route.legs.reduce((sum, l) => sum + l.distance, 0) : straight,
-      duration: route ? route.legs.reduce((sum, l) => sum + l.duration, 0) : 0,
+      duration: route ? route.legs.reduce((sum, l) => sum + (l.duration || 0), 0) : 0,
     };
   });
   list.push({
@@ -379,7 +413,7 @@ async function computeRoutes() {
       const dayStops = stops.value.filter((s) => s.date === d.date).sort(byStopOrder);
       if (dayStops.length < 2) return;
       try {
-        const route = await fetchRoute(mode, dayStops);
+        const route = await planDayRoute(dayStops, mode);
         if (route) next[d.date] = route;
       } catch {
         // 路線服務失敗時以直線顯示
@@ -393,12 +427,29 @@ async function computeRoutes() {
 // 地點、順序或交通方式改變時重新規劃（只看會影響路線的欄位）
 const routeKey = computed(() => (trip.value ? [
   trip.value.travelMode,
-  ...stops.value.filter((s) => s.date).sort(byStopOrder).map((s) => `${s.date}:${s.lat},${s.lng}`),
+  ...stops.value.filter((s) => s.date).sort(byStopOrder).map((s) => `${s.date}:${s.lat},${s.lng}:${s.arriveMode || ''}`),
 ].join('|') : ''));
 watch(routeKey, () => {
   clearTimeout(routeTimer);
   routeTimer = setTimeout(computeRoutes, 300);
 });
+
+/* ---- 路段交通方式 ---- */
+// 第 index 段：第 index 個地點 → 第 index+1 個地點（交通方式記在抵達的地點上）
+const segMode = (g, index) => travelModeInfo(g.stops[index + 1].arriveMode || trip.value.travelMode);
+function segLabel(g, index) {
+  const info = segMode(g, index);
+  const leg = g.legs?.[index];
+  const straight = fmtDistance(distanceKm(g.stops[index], g.stops[index + 1]));
+  if (!leg || info.kind === 'line') return `${info.label}・${straight}`;
+  if (leg.failed) return `${info.label}・直線 ${straight}（無法規劃路線）`;
+  if (info.kind === 'rail') return `${info.label} 約 ${fmtDuration(leg.duration)}・直線 ${straight}`;
+  return `${fmtDuration(leg.duration)}・${fmtDistance(leg.distance)}`;
+}
+function setArriveMode(stop, mode) {
+  if ((stop.arriveMode || null) === mode) return;
+  patchStop(stop, { arriveMode: mode });
+}
 
 async function setTravelMode(mode) {
   if (trip.value.travelMode === mode) return;

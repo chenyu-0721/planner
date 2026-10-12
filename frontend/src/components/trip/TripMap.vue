@@ -34,7 +34,7 @@ import 'leaflet/dist/leaflet.css';
 import Icon from '../Icon.vue';
 import { useUiStore } from '@/stores/ui';
 import {
-  categoryInfo, byStopOrder, UNSCHEDULED_COLOR, BASE_LAYERS, TAIWAN_BOUNDS, TAIWAN_CENTER, MIN_ZOOM, inTaiwan,
+  categoryInfo, byStopOrder, UNSCHEDULED_COLOR, BASE_LAYERS, TAIWAN_BOUNDS, TAIWAN_CENTER, MIN_ZOOM, inTaiwan, travelModeInfo,
 } from '@/utils/trip';
 
 const props = defineProps({
@@ -75,6 +75,21 @@ function pinIcon(stop, label, color) {
   });
 }
 
+// 線條樣式：道路 = 實線、高鐵 / 火車 = 軌道狀長虛線、直線 = 點線
+function drawLine({ mode, coords }, color) {
+  const kind = travelModeInfo(mode).kind;
+  if (kind === 'rail') {
+    L.polyline(coords, { color: '#fff', weight: 9, opacity: 0.95 }).addTo(layer);
+    L.polyline(coords, { color, weight: 6, opacity: 0.95 }).addTo(layer);
+    L.polyline(coords, { color: '#fff', weight: 2, opacity: 1, dashArray: '8 8' }).addTo(layer);
+    return;
+  }
+  L.polyline(coords, { color: '#fff', weight: 8, opacity: 0.9 }).addTo(layer);
+  L.polyline(coords, {
+    color, weight: 5, opacity: 0.95, dashArray: kind === 'road' ? null : '1 9', lineCap: 'round',
+  }).addTo(layer);
+}
+
 // 依目前篩選，整理出要顯示的每日路線
 function visibleGroups() {
   const groups = [];
@@ -108,11 +123,9 @@ function render() {
       L.polyline([prevLast, points[0]], { color: g.color, weight: 3, opacity: 0.6, dashArray: '6 8' }).addTo(layer);
     }
     if (points.length > 1) {
-      const line = g.route?.coords?.length ? g.route.coords : points;
-      L.polyline(line, { color: '#fff', weight: 8, opacity: 0.9 }).addTo(layer);
-      L.polyline(line, {
-        color: g.color, weight: 5, opacity: 0.95, dashArray: g.route ? null : '1 9', lineCap: 'round',
-      }).addTo(layer);
+      // 每一段依交通方式畫不同樣式；路線還沒算好時先畫直線
+      const lines = g.route?.lines?.length ? g.route.lines : [{ mode: 'straight', coords: points }];
+      for (const line of lines) drawLine(line, g.color);
     }
     prevLast = points[points.length - 1];
   }

@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   sqliteTable, integer, text, real, primaryKey, uniqueIndex, index, check,
 } from 'drizzle-orm/sqlite-core';
-import { LIMITS, STOP_CATEGORIES, TRAVEL_MODES } from '../lib/limits.js';
+import { LIMITS, STOP_CATEGORIES } from '../lib/limits.js';
 
 // SQLite 不會檢查 VARCHAR 長度，所以用 CHECK 限制字數與可用值
 const maxLen = (name, column, max) => check(name, sql`length(${column}) <= ${sql.raw(String(max))}`);
@@ -174,12 +174,13 @@ export const trips = sqliteTable('trips', {
   startDate: text('start_date').notNull(), // YYYY-MM-DD
   endDate: text('end_date').notNull(),
   color: integer('color').notNull().default(0),
-  travelMode: text('travel_mode').notNull().default('car'), // 路線：car / bike / foot / straight（直線）
+  travelMode: text('travel_mode').notNull().default('car'), // 已停用（舊欄位，保留以免重建資料表），改用 route_mode
+  routeMode: text('route_mode').notNull().default('car'), // 行程預設交通方式，可用值見 DEFAULT_TRAVEL_MODES（由 API 檢查）
   ownerId: integer('owner_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
-  oneOf('trips_travel_mode', t.travelMode, TRAVEL_MODES),
+  oneOf('trips_travel_mode', t.travelMode, ['car', 'bike', 'foot', 'straight']),
   maxLen('trips_name_len', t.name, LIMITS.tripName),
   maxLen('trips_description_len', t.description, LIMITS.tripDescription),
   check('trips_date_range', sql`${t.endDate} >= ${t.startDate}`),
@@ -213,6 +214,7 @@ export const tripStops = sqliteTable('trip_stops', {
   address: text('address'),
   notes: text('notes'),
   cost: real('cost'),
+  arriveMode: text('arrive_mode'), // 從前一個地點到這裡的交通方式；空值 = 使用行程預設（由 API 檢查可用值）
   sortOrder: real('sort_order').notNull().default(0),
   createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: createdAt(),

@@ -141,15 +141,51 @@ export async function searchPlaces(query, signal) {
     .filter((r, i, arr) => arr.findIndex((x) => x.title === r.title && Math.abs(x.lat - r.lat) < 1e-4) === i);
 }
 
-/* ---------- 道路路線（OSRM，FOSSGIS 免費服務） ---------- */
-
+/* ---------- 交通方式與路線 ----------
+ * 道路類：沿實際道路規劃
+ *   開車 / 腳踏車 / 步行：OSRM（routing.openstreetmap.de，FOSSGIS 免費服務）
+ *   機車：Valhalla motor_scooter（valhalla1.openstreetmap.de），會避開國道、以機車速度估算
+ * 鐵路類（高鐵 / 火車）：沒有免費的班次資料，依兩站直線距離估算時間，並提供 Google 地圖查班次
+ */
 export const TRAVEL_MODES = [
-  { key: 'car', label: '開車', emoji: '🚗', profile: 'routed-car/route/v1/driving', gmaps: 'driving' },
-  { key: 'bike', label: '騎車', emoji: '🚲', profile: 'routed-bike/route/v1/bike', gmaps: 'bicycling' },
-  { key: 'foot', label: '步行', emoji: '🚶', profile: 'routed-foot/route/v1/foot', gmaps: 'walking' },
-  { key: 'straight', label: '直線', emoji: '📏', profile: null, gmaps: 'driving' },
+  { key: 'car', label: '開車', emoji: '🚗', kind: 'road', engine: 'osrm', profile: 'routed-car/route/v1/driving', gmaps: 'driving' },
+  { key: 'scooter', label: '機車', emoji: '🛵', kind: 'road', engine: 'valhalla', costing: 'motor_scooter', gmaps: 'driving' },
+  { key: 'bike', label: '腳踏車', emoji: '🚲', kind: 'road', engine: 'osrm', profile: 'routed-bike/route/v1/bike', gmaps: 'bicycling' },
+  { key: 'foot', label: '步行', emoji: '🚶', kind: 'road', engine: 'osrm', profile: 'routed-foot/route/v1/foot', gmaps: 'walking' },
+  // speed：以「直線距離」換算的平均時速（含停靠站），依實際班次校正
+  { key: 'hsr', label: '高鐵', emoji: '🚄', kind: 'rail', speed: 165, gmaps: 'transit' },
+  { key: 'train', label: '火車', emoji: '🚆', kind: 'rail', speed: 60, gmaps: 'transit' },
+  { key: 'straight', label: '直線', emoji: '📏', kind: 'line', gmaps: 'driving' },
 ];
+// 行程預設只能選道路類與直線（高鐵 / 火車只用在單一路段）
+export const DEFAULT_TRAVEL_MODES = TRAVEL_MODES.filter((m) => m.kind !== 'rail');
 export const travelModeInfo = (key) => TRAVEL_MODES.find((m) => m.key === key) || TRAVEL_MODES[0];
+
+// Valhalla 的路線使用 polyline（精度 6 位）編碼
+function decodePolyline(str, precision = 6) {
+  const factor = 10 ** precision;
+  const coords = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+  const next = () => {
+    let result = 0;
+    let shift = 0;
+    let byte;
+    do {
+      byte = str.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    return result & 1 ? ~(result >> 1) : result >> 1;
+  };
+  while (index < str.length) {
+    lat += next();
+    lng += next();
+    coords.push([lat / factor, lng / factor]);
+  }
+  return coords;
+}
 
 const routeCache = new Map();
 
@@ -159,20 +195,94 @@ const routeCache = new Map();
  */
 export async function fetchRoute(mode, points) {
   const info = travelModeInfo(mode);
-  if (!info.profile || points.length < 2) return null;
-  const coordStr = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
-  const key = `${mode}|${coordStr}`;
+  if (info.kind !== 'road' || points.length < 2) return null;
+  const key = `${mode}|${points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';')}`;
   if (routeCache.has(key)) return routeCache.get(key);
-  const res = await fetch(`https://routing.openstreetmap.de/${info.profile}/${coordStr}?overview=full&geometries=geojson`);
-  if (!res.ok) throw new Error('路線規劃失敗');
-  const data = await res.json();
-  if (data.code !== 'Ok' || !data.routes?.length) return null;
-  const route = {
-    coords: data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]),
-    legs: data.routes[0].legs.map((l) => ({ distance: l.distance / 1000, duration: l.duration })),
-  };
+
+  let route;
+  if (info.engine === 'valhalla') {
+    const body = {
+      locations: points.map((p) => ({ lat: p.lat, lon: p.lng })),
+      costing: info.costing,
+      directions_options: { units: 'kilometers' },
+    };
+    const res = await fetch(`https://valhalla1.openstreetmap.de/route?json=${encodeURIComponent(JSON.stringify(body))}`);
+    if (!res.ok) throw new Error('路線規劃失敗');
+    const data = await res.json();
+    if (!data.trip?.legs?.length) return null;
+    route = {
+      coords: data.trip.legs.flatMap((l) => decodePolyline(l.shape)),
+      legs: data.trip.legs.map((l) => ({ distance: l.summary.length, duration: l.summary.time })),
+    };
+  } else {
+    const coordStr = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
+    const res = await fetch(`https://routing.openstreetmap.de/${info.profile}/${coordStr}?overview=full&geometries=geojson`);
+    if (!res.ok) throw new Error('路線規劃失敗');
+    const data = await res.json();
+    if (data.code !== 'Ok' || !data.routes?.length) return null;
+    route = {
+      coords: data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]),
+      legs: data.routes[0].legs.map((l) => ({ distance: l.distance / 1000, duration: l.duration })),
+    };
+  }
   routeCache.set(key, route);
   return route;
+}
+
+/**
+ * 規劃一天的路線：每一段可有不同交通方式（地點的 arriveMode，空值用行程預設）
+ * 連續相同的道路類交通方式會合併成一次查詢
+ * @returns {{
+ *   lines: { mode: string, coords: [lat, lng][] }[],   // 地圖上要畫的線
+ *   legs: { mode, distance, duration, estimated, failed }[], // 每一段（第 i 段 = 第 i 個地點 → 第 i+1 個）
+ * } | null}
+ */
+export async function planDayRoute(stops, defaultMode) {
+  if (stops.length < 2) return null;
+  const segs = stops.slice(1).map((to, i) => ({ from: stops[i], to, mode: to.arriveMode || defaultMode }));
+
+  const runs = [];
+  segs.forEach((seg, i) => {
+    const last = runs[runs.length - 1];
+    if (travelModeInfo(seg.mode).kind === 'road' && last?.mode === seg.mode && last.end === i) {
+      last.segs.push(seg);
+      last.end = i + 1;
+    } else {
+      runs.push({ mode: seg.mode, segs: [seg], end: i + 1 });
+    }
+  });
+
+  await Promise.all(runs.map(async (run) => {
+    const info = travelModeInfo(run.mode);
+    const straightLeg = (seg) => [seg.from, seg.to].map((p) => [p.lat, p.lng]);
+    if (info.kind === 'road') {
+      try {
+        const route = await fetchRoute(run.mode, [run.segs[0].from, ...run.segs.map((seg) => seg.to)]);
+        if (route) {
+          run.lines = [{ mode: run.mode, coords: route.coords }];
+          run.legs = route.legs.map((l) => ({ mode: run.mode, ...l, estimated: false }));
+          return;
+        }
+      } catch {
+        // 路線服務失敗時以直線顯示
+      }
+      run.lines = run.segs.map((seg) => ({ mode: 'straight', coords: straightLeg(seg) }));
+      run.legs = run.segs.map((seg) => ({ mode: run.mode, distance: distanceKm(seg.from, seg.to), duration: null, failed: true }));
+      return;
+    }
+    run.lines = run.segs.map((seg) => ({ mode: run.mode, coords: straightLeg(seg) }));
+    run.legs = run.segs.map((seg) => {
+      const km = distanceKm(seg.from, seg.to);
+      return {
+        mode: run.mode,
+        distance: km,
+        duration: info.kind === 'rail' ? (km / info.speed) * 3600 : null,
+        estimated: info.kind === 'rail',
+      };
+    });
+  }));
+
+  return { lines: runs.flatMap((r) => r.lines), legs: runs.flatMap((r) => r.legs) };
 }
 
 export function fmtDuration(sec) {
@@ -186,6 +296,14 @@ export function fmtDuration(sec) {
 
 const ll = (p) => `${p.lat},${p.lng}`;
 export const googlePlaceUrl = (stop) => `https://www.google.com/maps/search/?api=1&query=${ll(stop)}`;
+
+// 單一路段（高鐵 / 火車會用大眾運輸，可查實際班次）
+export function googleSegmentUrl(from, to, mode) {
+  const params = new URLSearchParams({
+    api: '1', origin: ll(from), destination: ll(to), travelmode: travelModeInfo(mode).gmaps,
+  });
+  return `https://www.google.com/maps/dir/?${params}`;
+}
 
 // 當天路線導航（Google 地圖最多 9 個中途點）
 export function googleDirectionsUrl(stops, mode) {

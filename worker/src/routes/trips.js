@@ -11,7 +11,7 @@ import {
 } from '../lib/helpers.js';
 import { requireAuth } from '../lib/auth.js';
 import {
-  LIMITS, STOP_CATEGORIES, MAX_TRIP_DAYS, TRAVEL_MODES, requireText, optionalText,
+  LIMITS, STOP_CATEGORIES, MAX_TRIP_DAYS, TRAVEL_MODES, DEFAULT_TRAVEL_MODES, requireText, optionalText,
 } from '../lib/limits.js';
 
 const router = new Hono();
@@ -82,6 +82,10 @@ function stopFields(trip, b, partial) {
     if (cost != null && (!Number.isFinite(cost) || cost < 0 || cost > 1e9)) throw new HttpError(400, '花費不正確');
     patch.cost = cost;
   }
+  if (has('arriveMode')) {
+    if (b.arriveMode && !TRAVEL_MODES.includes(b.arriveMode)) throw new HttpError(400, '交通方式不正確');
+    patch.arriveMode = b.arriveMode || null;
+  }
   if (has('sortOrder')) patch.sortOrder = Number(b.sortOrder) || 0;
   return patch;
 }
@@ -93,7 +97,7 @@ const tripJson = (t) => ({
   startDate: t.startDate,
   endDate: t.endDate,
   color: t.color,
-  travelMode: t.travelMode,
+  travelMode: t.routeMode,
   ownerId: t.ownerId,
   createdAt: t.createdAt,
   updatedAt: t.updatedAt,
@@ -178,8 +182,8 @@ router.put('/:id', async (c) => {
   if (b.description !== undefined) patch.description = optionalText(b.description, LIMITS.tripDescription, '行程描述') || null;
   if (b.color !== undefined) patch.color = Math.min(255, Math.max(0, Number(b.color) || 0));
   if (b.travelMode !== undefined) {
-    if (!TRAVEL_MODES.includes(b.travelMode)) throw new HttpError(400, '交通方式不正確');
-    patch.travelMode = b.travelMode;
+    if (!DEFAULT_TRAVEL_MODES.includes(b.travelMode)) throw new HttpError(400, '交通方式不正確');
+    patch.routeMode = b.travelMode;
   }
   if (b.startDate !== undefined || b.endDate !== undefined) {
     patch.startDate = b.startDate ?? trip.startDate;
