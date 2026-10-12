@@ -1,0 +1,19 @@
+{
+  "name": "planner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "仿 Microsoft Planner 的工作管理系統（Vue 3 + Tailwind CSS / Express + Sequelize + PM2）",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "setup": "npm --prefix backend run setup",
+    "build": "npm --prefix frontend run build",
+    "start": "pm2 start ecosystem.config.js",
+    "restart": "pm2 restart planner",
+    "stop": "pm2 stop planner",
+    "logs": "pm2 logs planner",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "startup:install": "node scripts/install-startup.js",
+    "startup:uninstall": "node scripts/install-startup.js --remove"
+  }
+}

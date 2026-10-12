@@ -1,0 +1,30 @@
+# 套件
+node_modules/
+
+# 環境變數（含資料庫密碼、JWT 金鑰）
+.env
+.env.*
+!.env.example
+
+# 前端 build 輸出（由 npm run build 產生）
+backend/public/
+frontend/dist/
+
+# 上傳檔案與 log
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/logs/
+logs/
+*.log
+npm-debug.log*
+
+# 本機產生的開機腳本
+scripts/*.vbs
+
+# 編輯器 / 系統
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+desktop.ini

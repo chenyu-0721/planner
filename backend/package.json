@@ -1,0 +1,40 @@
+{
+  "name": "planner-backend",
+  "version": "1.0.0",
+  "description": "Planner backend (Express + Sequelize + PM2)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "db:create": "node scripts/db-create.js",
+    "db:sync": "node scripts/db-sync.js",
+    "db:sync:alter": "node scripts/db-sync.js --alter",
+    "db:seed": "sequelize-cli db:seed:all",
+    "db:seed:undo": "sequelize-cli db:seed:undo:all",
+    "db:reset": "node scripts/db-sync.js --force && sequelize-cli db:seed:all",
+    "setup": "npm run db:create && npm run db:sync && npm run db:seed",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:restart": "pm2 restart planner",
+    "pm2:stop": "pm2 stop planner",
+    "pm2:logs": "pm2 logs planner",
+    "reset-password": "node scripts/reset-password.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.7",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.12.1",
+    "multer": "^2.4.0",
+    "mysql2": "^3.24.5",
+    "sequelize": "^6.37.8"
+  },
+  "devDependencies": {
+    "sequelize-cli": "^6.6.5"
+  }
+}
