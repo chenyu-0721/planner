@@ -1,7 +1,7 @@
 // 密碼雜湊：PBKDF2-SHA256（Web Crypto，Workers 原生支援）
 // 格式：pbkdf2_sha256$<iterations>$<salt base64>$<hash base64>
-// Workers 的 PBKDF2 上限為 100000 次
-const ITERATIONS = 100000;
+// 預設 50000 次（約 7ms CPU，符合 Workers 免費方案每次請求 10ms 的限制）；Workers 的上限為 100000 次
+export const ITERATIONS = 50000;
 const enc = new TextEncoder();
 
 const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
@@ -17,6 +17,9 @@ export async function hashPassword(password, iterations = ITERATIONS) {
   const hash = await derive(String(password), salt, iterations);
   return `pbkdf2_sha256$${iterations}$${toB64(salt)}$${toB64(hash)}`;
 }
+
+// 取得雜湊使用的迭代次數
+export const hashIterations = (stored) => Number(String(stored || '').split('$')[1]) || 0;
 
 export async function verifyPassword(password, stored) {
   const [alg, iter, salt, hash] = String(stored || '').split('$');

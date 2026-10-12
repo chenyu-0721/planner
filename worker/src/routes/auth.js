@@ -3,8 +3,10 @@ import { eq } from 'drizzle-orm';
 import { users } from '../db/schema.js';
 import { HttpError } from '../lib/errors.js';
 import { getDb, safeUser } from '../lib/helpers.js';
-import { verifyPassword } from '../lib/password.js';
-import { signToken, requireAuth, hashPassword } from '../lib/auth.js';
+import { verifyPassword, hashIterations } from '../lib/password.js';
+import {
+  signToken, requireAuth, hashPassword, passwordIterations,
+} from '../lib/auth.js';
 import { LIMITS, requireText, optionalText, checkPassword } from '../lib/limits.js';
 
 const router = new Hono();
@@ -15,6 +17,11 @@ router.post('/login', async (c) => {
   const user = await getDb(c).select().from(users).where(eq(users.username, String(username).trim())).get();
   if (!user || !(await verifyPassword(password, user.passwordHash))) throw new HttpError(401, '帳號或密碼錯誤');
   if (!user.isActive) throw new HttpError(403, '此帳號已停用');
+  // 迭代次數設定改變時，登入成功後自動以新設定重新雜湊（只會發生一次）
+  if (hashIterations(user.passwordHash) !== passwordIterations(c)) {
+    const passwordHash = await hashPassword(c, password);
+    await getDb(c).update(users).set({ passwordHash }).where(eq(users.id, user.id));
+  }
   return c.json({ token: await signToken(c, user), user: safeUser(user) });
 });
 

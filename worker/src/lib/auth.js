@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { users } from '../db/schema.js';
 import { HttpError } from './errors.js';
 import { getDb } from './helpers.js';
-import { hashPassword as hash } from './password.js';
+import { hashPassword as hash, ITERATIONS } from './password.js';
 
 export function signToken(c, user) {
   const days = Number(c.env.JWT_EXPIRES_DAYS || 7);
@@ -11,8 +11,9 @@ export function signToken(c, user) {
   return sign({ id: user.id, role: user.role, exp }, c.env.JWT_SECRET, 'HS256');
 }
 
-// 依環境變數 PBKDF2_ITERATIONS 產生密碼雜湊（預設 100000，Workers 上限 100000）
-export const hashPassword = (c, password) => hash(password, Number(c.env.PBKDF2_ITERATIONS || 100000));
+// 依環境變數 PBKDF2_ITERATIONS 產生密碼雜湊（預設 50000，Workers 上限 100000）
+export const passwordIterations = (c) => Math.min(100000, Number(c.env.PBKDF2_ITERATIONS) || ITERATIONS);
+export const hashPassword = (c, password) => hash(password, passwordIterations(c));
 
 export async function requireAuth(c, next) {
   if (!c.env.JWT_SECRET) throw new HttpError(500, '尚未設定 JWT_SECRET');
