@@ -12,7 +12,7 @@ import {
 import { requireAuth } from '../lib/auth.js';
 import { listCategories, categoryJson } from './stopCategories.js';
 import {
-  LIMITS, STOP_CATEGORIES, MAX_TRIP_DAYS, TRAVEL_MODES, DEFAULT_TRAVEL_MODES, requireText, optionalText,
+  LIMITS, STOP_CATEGORIES, MAX_TRIP_DAYS, TRAVEL_MODES, DEFAULT_TRAVEL_MODES, LANE_PHASES, requireText, optionalText,
 } from '../lib/limits.js';
 
 const router = new Hono();
@@ -54,6 +54,17 @@ function moneyOrNull(value, label) {
   const v = value === '' || value == null ? null : Number(value);
   if (v != null && (!Number.isFinite(v) || v < 0 || v > 1e9)) throw new HttpError(400, `${label}不正確`);
   return v;
+}
+
+// 分頭路線的成員必須是行程成員，且地點要有日期
+async function checkLane(db, trip, fields, existing) {
+  if (!fields.memberId) return;
+  const date = fields.date !== undefined ? fields.date : existing?.date;
+  if (!date) throw new HttpError(400, '分頭路線的地點必須排在某一天');
+  const member = await db.select({ id: tripMembers.id }).from(tripMembers)
+    .where(and(eq(tripMembers.tripId, trip.id), eq(tripMembers.userId, fields.memberId))).get();
+  if (!member) throw new HttpError(400, '這位使用者不是行程成員');
+  fields.isBackup = false;
 }
 
 // 選了自訂圖標時，歸類（category）跟著該圖標
@@ -103,6 +114,19 @@ function stopFields(trip, b, partial) {
   }
   if (has('sortOrder')) patch.sortOrder = Number(b.sortOrder) || 0;
   if (has('isBackup')) patch.isBackup = !!b.isBackup;
+  // 分頭路線：成員與階段必須一起設定或一起清除
+  if (has('memberId') || has('phase')) {
+    const memberId = b.memberId == null ? null : toId(b.memberId);
+    const phase = b.phase || null;
+    if ((memberId == null) !== (phase == null) || (phase && !LANE_PHASES.includes(phase))) throw new HttpError(400, '分頭路線設定不正確');
+    patch.memberId = memberId;
+    patch.phase = phase;
+  }
+  // 分頭路線的地點一定在某一天、不是備選；移到備選或拿掉日期時改回一般地點
+  if ((patch.date === null || patch.isBackup) && !patch.memberId) {
+    patch.memberId = null;
+    patch.phase = null;
+  }
   return patch;
 }
 
@@ -215,7 +239,8 @@ router.put('/:id', async (c) => {
   const statements = [db.update(trips).set(patch).where(eq(trips.id, trip.id)).returning()];
   // 縮短日期後，超出範圍的地點移到「未排入日期」
   if (patch.startDate) {
-    statements.push(db.update(tripStops).set({ date: null }).where(and(
+    // 分頭路線的地點也改回一般備選
+    statements.push(db.update(tripStops).set({ date: null, memberId: null, phase: null }).where(and(
       eq(tripStops.tripId, trip.id),
       isNotNull(tripStops.date),
       or(lt(tripStops.date, patch.startDate), gt(tripStops.date, patch.endDate)),
@@ -250,7 +275,12 @@ router.delete('/:id/members/:userId', async (c) => {
   const userId = toId(c.req.param('userId'));
   if (userId !== c.get('user').id && !canManage(c.get('user'), trip)) throw new HttpError(403, '沒有權限移除成員');
   if (userId === trip.ownerId) throw new HttpError(400, '無法移除行程擁有者');
-  await getDb(c).delete(tripMembers).where(and(eq(tripMembers.tripId, trip.id), eq(tripMembers.userId, userId)));
+  const db = getDb(c);
+  // 這位成員的各自出發 / 回程路線一併刪除
+  await db.batch([
+    db.delete(tripMembers).where(and(eq(tripMembers.tripId, trip.id), eq(tripMembers.userId, userId))),
+    db.delete(tripStops).where(and(eq(tripStops.tripId, trip.id), eq(tripStops.memberId, userId))),
+  ]);
   return c.json({ ok: true });
 });
 
@@ -261,6 +291,7 @@ router.post('/:id/stops', async (c) => {
   const db = getDb(c);
   const fields = stopFields(trip, { date: null, ...b }, false);
   await applyCustomCategory(db, fields);
+  await checkLane(db, trip, fields);
   if (fields.sortOrder === undefined) {
     // 預設加到該天最後
     const row = await db.select({ v: max(tripStops.sortOrder) }).from(tripStops).where(and(
@@ -279,6 +310,7 @@ router.put('/:id/stops/:stopId', async (c) => {
   const db = getDb(c);
   await applyCustomCategory(db, patch);
   const where = and(eq(tripStops.id, toId(c.req.param('stopId'))), eq(tripStops.tripId, trip.id));
+  if (patch.memberId) await checkLane(db, trip, patch, await db.select({ date: tripStops.date }).from(tripStops).where(where).get());
   const stop = Object.keys(patch).length
     ? await db.update(tripStops).set(patch).where(where).returning().get()
     : await db.select().from(tripStops).where(where).get();

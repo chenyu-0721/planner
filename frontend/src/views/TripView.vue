@@ -95,12 +95,17 @@
         <div class="p-3 border-b border-line bg-white space-y-2">
           <form class="relative" @submit.prevent="search">
             <Icon name="search" :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" />
-            <input v-model="query" class="input !pl-8" placeholder="搜尋地點，或貼上 Google 地圖連結" maxlength="2000" @input="onQueryInput" />
+            <input ref="searchInput" v-model="query" class="input !pl-8" placeholder="搜尋地點，或貼上 Google 地圖連結" maxlength="2000" @input="onQueryInput" />
           </form>
+          <div v-if="laneTarget" class="flex items-center gap-2 rounded bg-accent-light text-accent text-xs px-2 py-1.5">
+            <Avatar :user="laneTarget.member" :size="20" />
+            <span class="flex-1 min-w-0 leading-4">正在加入 <b>{{ laneTarget.member.displayName }}</b> 的{{ laneTarget.phaseLabel }}地點：搜尋地點、貼上 Google 地圖連結或座標</span>
+            <button class="shrink-0 hover:underline cursor-pointer" @click="laneTarget = null">取消</button>
+          </div>
           <div v-if="searching" class="text-xs text-ink-3 px-1">搜尋中…</div>
           <div v-else-if="results" class="rounded border border-line bg-white max-h-64 overflow-y-auto thin-scroll">
             <div class="flex items-start justify-between gap-2 px-3 py-2 text-xs leading-4 text-ink-3 border-b border-line">
-              <span class="min-w-0">{{ results.length ? (searchNote || '點選地點加入行程，或按「＋備選」先放著') : (searchNote || '找不到符合的地點') }}</span>
+              <span class="min-w-0">{{ results.length ? (searchNote || (laneTarget ? `點選地點加入${laneTarget.member.displayName}的${laneTarget.phaseLabel}路線` : '點選地點加入行程，或按「＋備選」先放著')) : (searchNote || '找不到符合的地點') }}</span>
               <button class="hover:text-ink cursor-pointer shrink-0" @click="results = null"><Icon name="x" :size="13" /></button>
             </div>
             <div v-for="(r, i) in results" :key="i" class="flex items-stretch border-b border-line last:border-0">
@@ -108,7 +113,7 @@
                 <div class="text-sm font-semibold truncate">{{ r.title }}</div>
                 <div class="text-xs text-ink-3 line-clamp-2">{{ r.address }}</div>
               </button>
-              <button class="shrink-0 px-3 text-xs text-accent border-l border-line hover:bg-hover cursor-pointer" title="先放到備選，之後再決定要不要去" @click="openNewStop(r, true)">＋備選</button>
+              <button v-if="!laneTarget" class="shrink-0 px-3 text-xs text-accent border-l border-line hover:bg-hover cursor-pointer" title="先放到備選，之後再決定要不要去" @click="openNewStop(r, true)">＋備選</button>
             </div>
             <div v-if="!results.length && !isGoogleMapsUrl(query)" class="px-3 py-2 border-t border-line">
               <a :href="googleMapsSearchUrl" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-sm text-accent hover:underline">
@@ -164,14 +169,21 @@
               >
                 <Icon name="external" :size="14" />
               </a>
-              <Popover v-if="g.numbered && g.stops.length > 1" close-on-click placement="bottom-end">
+              <Popover v-if="g.numbered && (g.stops.length > 1 || members.length > 1)" close-on-click placement="bottom-end">
                 <template #trigger>
-                  <button class="icon-btn !size-7" title="自動排時間、最佳順序"><Icon name="clock" :size="14" /></button>
+                  <button class="icon-btn !size-7" title="自動排時間、最佳順序、各自出發 / 回程"><Icon name="more" :size="15" /></button>
                 </template>
-                <button class="menu-item" @click="scheduleDate = g.date"><Icon name="clock" />自動排時間</button>
-                <button class="menu-item" :disabled="g.stops.length < 3" :class="g.stops.length < 3 ? 'opacity-50 pointer-events-none' : ''" @click="optimizeDate = g.date">
-                  <Icon name="route" />最佳順序<span v-if="g.stops.length < 3" class="ml-auto text-xs text-ink-4">需 3 個地點</span>
-                </button>
+                <template v-if="g.stops.length > 1">
+                  <button class="menu-item" @click="scheduleDate = g.date"><Icon name="clock" />自動排時間</button>
+                  <button class="menu-item" :disabled="g.stops.length < 3" :class="g.stops.length < 3 ? 'opacity-50 pointer-events-none' : ''" @click="optimizeDate = g.date">
+                    <Icon name="route" />最佳順序<span v-if="g.stops.length < 3" class="ml-auto text-xs text-ink-4">需 3 個地點</span>
+                  </button>
+                </template>
+                <template v-if="members.length > 1">
+                  <div v-if="g.stops.length > 1" class="border-t border-line my-1"></div>
+                  <button class="menu-item" @click="openLanes(g.date, 'depart')"><Icon name="users" />各自出發（從不同地方出發）</button>
+                  <button class="menu-item" @click="openLanes(g.date, 'return')"><Icon name="users" />各自回程（散場各自回家）</button>
+                </template>
               </Popover>
             </header>
             <div v-if="g.numbered && dayWeather(g)" class="-mt-1 mb-2 pl-3 flex items-center gap-1.5 text-xs text-ink-2" :title="`天氣預報（${dayWeather(g).place}附近，Open-Meteo）`">
@@ -181,6 +193,23 @@
               <span v-if="dayWeather(g).rain != null" class="tabular-nums" :class="dayWeather(g).rain >= 50 ? 'text-accent font-semibold' : 'text-ink-3'">☔ 降雨 {{ dayWeather(g).rain }}%</span>
             </div>
             <div v-else-if="g.numbered && g.date > weatherWindow.to" class="-mt-1 mb-2 pl-3 text-[11px] text-ink-4">出發前 {{ FORECAST_DAYS }} 天內會顯示天氣預報</div>
+
+            <DayLanes
+              v-if="g.numbered && (g.departLanes.length || laneOpen[`${g.date}|depart`])"
+              phase="depart"
+              :lanes="g.departLanes"
+              :meeting="g.stops[0] || null"
+                :members="members"
+                :travel-mode="trip.travelMode"
+                :focus-stop-id="focusStopId"
+                @add="(memberId) => startLaneStop(g.date, 'depart', memberId)"
+                @edit="editStop"
+                @delete="deleteStop"
+                @mode="(stop, m) => setArriveMode(stop, m)"
+                @reorder="(stop, sortOrder) => patchStop(stop, { sortOrder })"
+                @focus="focusStop"
+                @close="laneOpen[`${g.date}|depart`] = false"
+            />
 
             <draggable
               :model-value="g.stops"
@@ -224,73 +253,41 @@
                       <button class="menu-item !text-[#c50f1f]" @click="deleteStop(s)"><Icon name="trash" />刪除</button>
                     </template>
                   </StopCard>
-                  <div v-if="g.numbered && index < g.stops.length - 1" class="no-drag flex items-stretch gap-2 py-1.5 pl-[21px]">
-                    <span class="w-px shrink-0" :style="{ background: g.color }"></span>
-                    <Popover close-on-click block class="min-w-0 flex-1">
-                      <template #trigger>
-                        <button
-                          type="button"
-                          class="flex w-full items-center gap-2 rounded-md border bg-white px-2 py-1.5 text-left cursor-pointer hover:border-accent"
-                          :class="seg(g, index).custom ? 'border-accent' : 'border-line'"
-                          title="變更這一段的交通方式"
-                        >
-                          <span class="text-base leading-none shrink-0">{{ seg(g, index).info.emoji }}</span>
-                          <span class="min-w-0 flex-1">
-                            <span class="flex items-center gap-1.5">
-                              <span class="text-xs font-semibold text-ink">{{ seg(g, index).info.label }}</span>
-                              <span v-if="!seg(g, index).custom" class="text-[10px] text-ink-4">預設</span>
-                            </span>
-                            <span class="block truncate text-[11px]" :class="seg(g, index).failed ? 'text-[#c50f1f]' : 'text-ink-3'">{{ seg(g, index).detail }}</span>
-                          </span>
-                          <Icon name="chevron-down" :size="14" class="shrink-0 text-ink-3" />
-                        </button>
-                      </template>
-                      <div class="w-64">
-                        <div class="px-3 pt-1.5 pb-1 text-xs text-ink-3 truncate">這一段前往「{{ g.stops[index + 1].title }}」</div>
-                        <button class="menu-item" @click="setArriveMode(g.stops[index + 1], null)">
-                          <span class="w-4"><Icon v-if="!g.stops[index + 1].arriveMode" name="check" :size="14" class="text-accent" /></span>
-                          跟隨預設（{{ travelModeInfo(trip.travelMode).label }}）
-                        </button>
-                        <div class="px-3 pt-2 pb-0.5 text-[11px] font-semibold text-ink-4">沿道路</div>
-                        <button v-for="m in roadModes" :key="m.key" class="menu-item" @click="setArriveMode(g.stops[index + 1], m.key)">
-                          <span class="w-4"><Icon v-if="g.stops[index + 1].arriveMode === m.key" name="check" :size="14" class="text-accent" /></span>
-                          <span>{{ m.emoji }}</span>{{ m.label }}
-                        </button>
-                        <div class="px-3 pt-2 pb-0.5 text-[11px] font-semibold text-ink-4">軌道 · 依距離估算時間</div>
-                        <button v-for="m in railModes" :key="m.key" class="menu-item" @click="setArriveMode(g.stops[index + 1], m.key)">
-                          <span class="w-4"><Icon v-if="g.stops[index + 1].arriveMode === m.key" name="check" :size="14" class="text-accent" /></span>
-                          <span>{{ m.emoji }}</span>{{ m.label }}
-                        </button>
-                        <div class="border-t border-line my-1"></div>
-                        <button class="menu-item" @click="setArriveMode(g.stops[index + 1], lineMode.key)">
-                          <span class="w-4"><Icon v-if="g.stops[index + 1].arriveMode === lineMode.key" name="check" :size="14" class="text-accent" /></span>
-                          <span>{{ lineMode.emoji }}</span>{{ lineMode.label }}
-                        </button>
-                        <div class="border-t border-line my-1"></div>
-                        <button class="menu-item" @click="editStop(g.stops[index + 1], 'arriveCost')">
-                          <span class="w-4"><Icon name="wallet" :size="14" /></span>
-                          {{ g.stops[index + 1].arriveCost ? `交通費 ${fmtCost(g.stops[index + 1].arriveCost)}` : '填寫這段交通費' }}
-                        </button>
-                      </div>
-                    </Popover>
-                    <a
-                      v-if="seg(g, index).info.kind === 'rail'"
-                      :href="googleSegmentUrl(s, g.stops[index + 1], seg(g, index).info.key)"
-                      target="_blank"
-                      rel="noopener"
-                      class="inline-flex shrink-0 items-center gap-0.5 self-center h-7 px-1.5 rounded text-xs text-accent hover:bg-black/5"
-                      title="在 Google 地圖查詢實際班次"
-                      @click.stop
-                    >
-                      查班次<Icon name="external" :size="11" />
-                    </a>
-                  </div>
+                  <SegmentCard
+                    v-if="g.numbered && index < g.stops.length - 1"
+                    :seg="seg(g, index)"
+                    :mode="g.stops[index + 1].arriveMode || null"
+                    :default-label="travelModeInfo(trip.travelMode).label"
+                    :caption="`這一段前往「${g.stops[index + 1].title}」`"
+                    :fare="g.stops[index + 1].arriveCost ?? null"
+                    :rail-url="googleSegmentUrl(s, g.stops[index + 1], seg(g, index).info.key)"
+                    :color="g.color"
+                    @mode="(m) => setArriveMode(g.stops[index + 1], m)"
+                    @fare="editStop(g.stops[index + 1], 'arriveCost')"
+                  />
                 </div>
               </template>
             </draggable>
             <div v-if="!g.stops.length" class="text-xs text-ink-4 px-1 -mt-8 mb-2 h-8 flex items-center pointer-events-none">
               {{ g.numbered ? '拖曳地點到這裡，或搜尋新增' : '還沒有備選。搜尋時按「＋備選」，或拖曳地點到這裡' }}
             </div>
+
+            <DayLanes
+              v-if="g.numbered && (g.returnLanes.length || laneOpen[`${g.date}|return`])"
+              phase="return"
+              :lanes="g.returnLanes"
+              :meeting="g.stops[g.stops.length - 1] || null"
+                :members="members"
+                :travel-mode="trip.travelMode"
+                :focus-stop-id="focusStopId"
+                @add="(memberId) => startLaneStop(g.date, 'return', memberId)"
+                @edit="editStop"
+                @delete="deleteStop"
+                @mode="(stop, m) => setArriveMode(stop, m)"
+                @reorder="(stop, sortOrder) => patchStop(stop, { sortOrder })"
+                @focus="focusStop"
+                @close="laneOpen[`${g.date}|return`] = false"
+            />
 
             <!-- 這天的備選：不排序號、不連線、不計入時間與預算 -->
             <div v-if="g.numbered && g.backups.length" class="mt-2">
@@ -344,6 +341,7 @@
           :days="days"
           :stops="stops"
           :routes="routes"
+          :lanes="mapLanes"
           :routing="routing"
           :selected-date="selectedDate"
           :focus-stop-id="focusStopId"
@@ -369,7 +367,7 @@
       :trip="trip"
       :stops="stops"
       :days="days"
-      :member-count="members.length"
+      :members="members"
       @save-budget="saveBudget"
       @edit="editFromBudget"
     />
@@ -404,6 +402,8 @@ import StopEditor from '@/components/trip/StopEditor.vue';
 import TripFormDialog from '@/components/trip/TripFormDialog.vue';
 import BudgetDialog from '@/components/trip/BudgetDialog.vue';
 import StopCard from '@/components/trip/StopCard.vue';
+import SegmentCard from '@/components/trip/SegmentCard.vue';
+import DayLanes from '@/components/trip/DayLanes.vue';
 import BackupPickerDialog from '@/components/trip/BackupPickerDialog.vue';
 import AutoScheduleDialog from '@/components/trip/AutoScheduleDialog.vue';
 import OptimizeOrderDialog from '@/components/trip/OptimizeOrderDialog.vue';
@@ -411,9 +411,10 @@ import api from '@/api';
 import { sortOrderAt } from '@/utils/planner';
 import {
   tripDays, fmtTripRange, stopCategory, setCustomCategories, distanceKm, fmtDistance, fmtCost, byStopOrder,
-  sortOrderForTime, searchPlaces, stopTotal, isBackup, isPlanned, UNSCHEDULED_COLOR, inTaiwan,
+  sortOrderForTime, searchPlaces, stopTotal, isBackup, isPlanned, isShared,
+  segmentInfo, groupLanes, laneSequence, laneTimes, LANE_PHASES, UNSCHEDULED_COLOR, inTaiwan,
   parseCoordinates, isGoogleMapsUrl, isShortGoogleUrl, placeFromGoogleUrl,
-  TRAVEL_MODES, DEFAULT_TRAVEL_MODES, travelModeInfo, planDayRoute, upgradeRailLegs, fmtDuration, googleDirectionsUrl, googleSegmentUrl,
+  DEFAULT_TRAVEL_MODES, travelModeInfo, planDayRoute, upgradeRailLegs, fmtDuration, googleDirectionsUrl, googleSegmentUrl,
 } from '@/utils/trip';
 import {
   fetchWeather, weatherKey, weatherInfo, weatherRange, hourlyAt, fmtTemp, FORECAST_DAYS,
@@ -460,9 +461,32 @@ const totalCost = computed(() => stops.value.filter(isPlanned).reduce((sum, s) =
 const overBudget = computed(() => !!trip.value?.budget && totalCost.value > trip.value.budget);
 const budgetOpen = ref(false);
 
+/* ---- 分頭路線（各自出發 / 各自回程） ---- */
+const laneRoutes = ref({}); // { [lane.key]: { lines, legs, sig } }
+const laneOpen = reactive({}); // 從選單打開、還沒有地點的分頭路線
+const allLanes = computed(() => groupLanes(stops.value, members.value));
+const laneSig = (seq) => seq.map((x) => `${x.id}:${x.lat},${x.lng}:${x.arriveMode || ''}`).join('|');
+// 分頭路線依成員順序配色（不用頭像顏色：頭像顏色可能重複，也可能跟當天路線同色）
+const LANE_COLORS = ['#ca5010', '#107c10', '#c239b3', '#8764b8', '#038387', '#986f0b', '#d13438', '#004e8c'];
+const memberOf = (id) => {
+  const i = members.value.findIndex((m) => m.id === id);
+  return i >= 0 ? { ...members.value[i], color: LANE_COLORS[i % LANE_COLORS.length] } : { id, displayName: '成員', color: '#8a8886' };
+};
+function lanesFor(date, phase, shared) {
+  const meeting = phase === 'depart' ? shared[0] : shared[shared.length - 1];
+  return allLanes.value.filter((l) => l.date === date && l.phase === phase).map((l) => {
+    const seq = laneSequence(phase, l.stops, meeting);
+    const sig = laneSig(seq);
+    const route = laneRoutes.value[l.key]?.sig === sig ? laneRoutes.value[l.key] : null;
+    return {
+      ...l, member: memberOf(l.memberId), meeting, hasMeeting: !!meeting, seq, sig, legs: route?.legs, lines: route?.lines, times: laneTimes(phase, seq, route?.legs, meeting),
+    };
+  });
+}
+
 const groups = computed(() => {
   const list = days.value.map((d) => {
-    const dayStops = stops.value.filter((s) => s.date === d.date && !s.isBackup).sort(byStopOrder);
+    const dayStops = stops.value.filter((s) => s.date === d.date && isShared(s)).sort(byStopOrder);
     // 路線是依哪個順序算的；順序剛改、還沒重算完時先不用舊的路段
     const saved = routes.value[d.date];
     const route = saved?.ids === dayStops.map((s) => s.id).join(',') ? saved : null;
@@ -476,6 +500,8 @@ const groups = computed(() => {
       numbered: true,
       stops: dayStops,
       backups: stops.value.filter((s) => s.date === d.date && s.isBackup).sort(byStopOrder),
+      departLanes: lanesFor(d.date, 'depart', dayStops),
+      returnLanes: lanesFor(d.date, 'return', dayStops),
       cost: dayStops.reduce((sum, s) => sum + stopTotal(s), 0),
       legs: route?.legs,
       distance: route ? route.legs.reduce((sum, l) => sum + l.distance, 0) : straight,
@@ -491,6 +517,8 @@ const groups = computed(() => {
     numbered: false,
     stops: selectedDate.value === 'unscheduled' ? allBackups.value : undatedBackups.value,
     backups: [],
+    departLanes: [],
+    returnLanes: [],
     cost: 0,
     distance: 0,
   });
@@ -621,7 +649,7 @@ async function computeRoutes() {
   routing.value = true;
   try {
     await Promise.all(days.value.map(async (d) => {
-      const dayStops = stops.value.filter((s) => s.date === d.date && !s.isBackup).sort(byStopOrder);
+      const dayStops = stops.value.filter((s) => s.date === d.date && isShared(s)).sort(byStopOrder);
       if (dayStops.length < 2) return;
       try {
         const route = await planDayRoute(dayStops, mode);
@@ -653,7 +681,7 @@ async function computeRoutes() {
 // 地點、順序或交通方式改變時重新規劃（只看會影響路線的欄位）
 const routeKey = computed(() => (trip.value ? [
   trip.value.travelMode,
-  ...stops.value.filter(isPlanned).sort(byStopOrder).map((s) => `${s.date}:${s.lat},${s.lng}:${s.arriveMode || ''}`),
+  ...stops.value.filter(isShared).sort(byStopOrder).map((s) => `${s.date}:${s.lat},${s.lng}:${s.arriveMode || ''}`),
 ].join('|') : ''));
 watch(routeKey, () => {
   clearTimeout(routeTimer);
@@ -669,7 +697,7 @@ const centerOf = (list) => ({
 });
 // 每天以當天地點的中心查詢；沒有地點的日子用整個行程的中心
 const dayCenters = computed(() => {
-  const dated = stops.value.filter(isPlanned);
+  const dated = stops.value.filter(isShared);
   const tripCenter = dated.length ? centerOf(dated) : null;
   const map = {};
   for (const d of days.value) {
@@ -711,29 +739,70 @@ watch(weatherQuery, () => {
   weatherTimer = setTimeout(loadWeather, 500);
 });
 
+let laneRouteTimer = null;
+let laneRouteSeq = 0;
+const visibleLaneList = computed(() => groups.value.flatMap((g) => [...g.departLanes, ...g.returnLanes]));
+async function computeLaneRoutes() {
+  if (!trip.value) return;
+  const seq = ++laneRouteSeq;
+  const mode = trip.value.travelMode;
+  const list = visibleLaneList.value.filter((l) => l.seq.length >= 2);
+  const next = {};
+  await Promise.all(list.map(async (l) => {
+    try {
+      const route = await planDayRoute(l.seq, mode);
+      if (route) next[l.key] = { ...route, sig: l.sig };
+    } catch {
+      // 路線服務失敗時以直線顯示
+    }
+  }));
+  if (seq !== laneRouteSeq) return;
+  laneRoutes.value = next;
+  for (const l of list) {
+    upgradeRailLegs(l.seq, mode, (index, leg) => {
+      const current = laneRoutes.value[l.key];
+      if (seq !== laneRouteSeq || current?.sig !== l.sig || !current.legs[index]) return;
+      const legs = current.legs.slice();
+      legs[index] = leg;
+      const lines = current.lines.map((line) => (line.segIndex === index ? { ...line, coords: leg.coords } : line));
+      laneRoutes.value = { ...laneRoutes.value, [l.key]: { ...current, lines, legs } };
+    });
+  }
+}
+const laneRouteKey = computed(() => (trip.value ? [trip.value.travelMode, ...visibleLaneList.value.map((l) => l.sig)].join('#') : ''));
+watch(laneRouteKey, () => {
+  clearTimeout(laneRouteTimer);
+  laneRouteTimer = setTimeout(computeLaneRoutes, 300);
+});
+
+// 地圖只在選了某一天時畫分頭路線，避免「全部」時太亂
+const mapLanes = computed(() => {
+  const g = groups.value.find((x) => x.date && x.date === selectedDate.value);
+  if (!g) return [];
+  return [...g.departLanes, ...g.returnLanes].map((l) => ({
+    key: l.key, color: l.member.color || '#8a8886', name: l.member.displayName, stops: l.stops, seq: l.seq, lines: l.lines,
+  }));
+});
+
+const laneTarget = ref(null); // 正在為誰加入分頭路線的地點
+const searchInput = ref(null);
+function openLanes(date, phase) {
+  laneOpen[`${date}|${phase}`] = true;
+}
+function startLaneStop(date, phase, memberId) {
+  laneTarget.value = {
+    date, phase, member: memberOf(memberId), phaseLabel: LANE_PHASES.find((p) => p.key === phase).label,
+  };
+  mobileTab.value = 'list';
+  requestAnimationFrame(() => searchInput.value?.focus());
+}
+const laneInfo = (s) => (s.memberId ? { name: memberOf(s.memberId).displayName, phase: s.phase, phaseLabel: LANE_PHASES.find((p) => p.key === s.phase)?.label } : null);
+
 /* ---- 路段交通方式 ---- */
-const roadModes = TRAVEL_MODES.filter((m) => m.kind === 'road');
-const railModes = TRAVEL_MODES.filter((m) => m.kind === 'rail');
-const lineMode = TRAVEL_MODES.find((m) => m.kind === 'line');
 // 第 index 段：第 index 個地點 → 第 index+1 個地點（交通方式記在抵達的地點上）
 function seg(g, index) {
-  const info = travelModeInfo(g.stops[index + 1].arriveMode || trip.value.travelMode);
-  const custom = !!g.stops[index + 1].arriveMode;
-  const leg = g.legs?.[index];
-  const straight = fmtDistance(distanceKm(g.stops[index], g.stops[index + 1]));
-  const fare = g.stops[index + 1].arriveCost;
-  const r = segDetail(info, custom, leg, straight);
-  return fare ? { ...r, detail: `${r.detail} · ${fmtCost(fare)}` } : r;
-}
-function segDetail(info, custom, leg, straight) {
-  if (!leg) return { info, custom, detail: '計算路線中…', failed: false };
-  if (info.kind === 'line') return { info, custom, detail: `直線 ${straight}`, failed: false };
-  if (leg.failed) return { info, custom, detail: `無法規劃道路，改顯示直線 ${straight}`, failed: true };
-  if (info.kind === 'rail') {
-    const dist = leg.alongTrack ? `軌道 ${fmtDistance(leg.distance)}` : `直線 ${straight}`;
-    return { info, custom, detail: `約 ${fmtDuration(leg.duration)} · ${dist}`, failed: false };
-  }
-  return { info, custom, detail: `${fmtDuration(leg.duration)} · ${fmtDistance(leg.distance)}`, failed: false };
+  const to = g.stops[index + 1];
+  return segmentInfo(to.arriveMode || trip.value.travelMode, !!to.arriveMode, g.legs?.[index], g.stops[index], to, to.arriveCost);
 }
 function setArriveMode(stop, mode) {
   if ((stop.arriveMode || null) === mode) return;
@@ -758,6 +827,23 @@ function openNewStop(place, asBackup = false) {
   results.value = null;
   query.value = '';
   const day = selectedDate.value && selectedDate.value !== 'unscheduled' ? selectedDate.value : null;
+  const lane = laneTarget.value;
+  laneTarget.value = null;
+  if (lane) {
+    editing.value = {
+      title: place.title,
+      address: place.address,
+      lat: place.lat,
+      lng: place.lng,
+      category: 'transport',
+      date: lane.date,
+      isBackup: false,
+      memberId: lane.member.id,
+      phase: lane.phase,
+      lane: { name: lane.member.displayName, phase: lane.phase, phaseLabel: lane.phaseLabel },
+    };
+    return;
+  }
   editing.value = {
     title: place.title,
     address: place.address,
@@ -770,12 +856,12 @@ function openNewStop(place, asBackup = false) {
 }
 
 /* ---- 編輯 / 儲存地點 ---- */
-const dayStopsOf = (date) => stops.value.filter((s) => s.date === date && !s.isBackup);
+const dayStopsOf = (date) => stops.value.filter((s) => s.date === date && isShared(s));
 // 某天最後面的 sortOrder（排入時加在最後）
 const endOfDay = (date, exceptId) => Math.max(0, ...stops.value.filter((s) => s.date === date && s.id !== exceptId).map((s) => s.sortOrder)) + 1;
 
 function editStop(s, focus) {
-  editing.value = { ...s, focus };
+  editing.value = { ...s, focus, lane: laneInfo(s) };
 }
 
 async function saveStop(form) {
@@ -785,6 +871,8 @@ async function saveStop(form) {
     category: form.category,
     customCategoryId: form.customCategoryId,
     isBackup: form.isBackup,
+    memberId: form.memberId || null,
+    phase: form.memberId ? form.phase : null,
     date: form.date,
     startTime: form.startTime,
     endTime: form.endTime,
@@ -798,7 +886,7 @@ async function saveStop(form) {
   // 依時間排序；換到別天且沒有時間時放到該天最後
   const dateChanged = !original || original.date !== form.date || !!original.isBackup !== !!form.isBackup;
   const timeChanged = !original || original.startTime !== form.startTime;
-  if (form.date && !form.isBackup && form.startTime && (dateChanged || timeChanged)) {
+  if (form.date && !form.isBackup && !form.memberId && form.startTime && (dateChanged || timeChanged)) {
     payload.sortOrder = sortOrderForTime(dayStopsOf(form.date), { id: form.id ?? -1, sortOrder: Infinity }, form.startTime);
   } else if (dateChanged) {
     payload.sortOrder = endOfDay(form.date, form.id);
@@ -814,7 +902,10 @@ async function saveStop(form) {
     results.value = null;
     query.value = '';
     focusStopId.value = stop.id;
-    if (!form.id) ui.toast(stop.isBackup || !stop.date ? `已將「${stop.title}」放到備選` : `已將「${stop.title}」加入行程`, 'success');
+    if (!form.id) {
+      const msg = stop.memberId ? `已加入${laneInfo(stop).name}的${laneInfo(stop).phaseLabel}路線` : stop.isBackup || !stop.date ? `已將「${stop.title}」放到備選` : `已將「${stop.title}」加入行程`;
+      ui.toast(msg, 'success');
+    }
   } catch (e) {
     ui.error(e);
   } finally {
@@ -1009,11 +1100,12 @@ async function addMember(u) {
 }
 
 async function removeMember(m) {
-  const ok = await ui.confirm({ title: '移除成員', message: `確定要將 ${m.displayName} 從行程中移除嗎？`, okText: '移除' });
+  const ok = await ui.confirm({ title: '移除成員', message: `確定要將 ${m.displayName} 從行程中移除嗎？\n他的各自出發 / 回程路線也會一併刪除。`, okText: '移除' });
   if (!ok) return;
   try {
     await api.delete(`/trips/${tripId}/members/${m.id}`);
     members.value = members.value.filter((x) => x.id !== m.id);
+    stops.value = stops.value.filter((x) => x.memberId !== m.id);
   } catch (e) {
     ui.error(e);
   }

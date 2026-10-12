@@ -652,42 +652,153 @@ export const budgetGroupOf = (category) => BUDGET_GROUPS.find((g) => g.categorie
 export const stopTotal = (s) => (s.cost || 0) + (s.arriveCost || 0);
 
 /**
- * 依類別與日期加總（只算已排入行程的地點；備選另外加總，不算進總額）
- * @returns {{ total, groups: { ...group, amount, items: { id, label, sub, amount, fare? }[] }[], days: { date, title, subtitle, color, amount }[], backup: number }}
+ * 依類別、日期與成員加總（只算已排入行程的地點；備選另外加總，不算進總額）
+ * 分頭路線（各自出發 / 回程）的花費算在該成員身上，其餘為共同花費（平分）
+ * @returns {{
+ *   total, shared, groups: { ...group, amount, items: { id, label, sub, amount, fare? }[] }[],
+ *   days: { date, title, subtitle, color, amount }[], backup: number, personal: Record<number, number>,
+ * }}
  */
-export function computeBudget(stops, days) {
+export function computeBudget(stops, days, members = []) {
   const groups = BUDGET_GROUPS.map((g) => ({ ...g, amount: 0, items: [] }));
   const byKey = Object.fromEntries(groups.map((g) => [g.key, g]));
   const dayList = days.map((d) => ({ date: d.date, title: d.title, subtitle: d.subtitle, color: d.color, amount: 0 }));
   const dayOf = Object.fromEntries(dayList.map((d) => [d.date, d]));
+  const nameOf = Object.fromEntries(members.map((m) => [m.id, m.displayName]));
   const backup = stops.filter(isBackup).reduce((sum, s) => sum + stopTotal(s), 0);
+  const personal = {};
 
-  const ordered = stops.filter(isPlanned).sort((a, b) => a.date.localeCompare(b.date) || byStopOrder(a, b));
-  ordered.forEach((s, i) => {
+  const addCost = (s, sub) => {
+    if (!s.cost) return;
+    const g = byKey[budgetGroupOf(s.category).key];
+    g.amount += s.cost;
+    g.items.push({ id: s.id, label: `${stopCategory(s).emoji} ${s.title}`, sub, amount: s.cost });
+  };
+  const addFare = (s, from, to, sub) => {
+    if (!s.arriveCost) return;
+    const mode = s.arriveMode ? travelModeInfo(s.arriveMode) : null;
+    byKey.transport.amount += s.arriveCost;
+    byKey.transport.items.push({
+      id: s.id, label: `${mode ? mode.emoji : '🧭'} ${from} → ${to}`, sub: `${sub}${mode ? `・${mode.label}` : ''}`, amount: s.arriveCost, fare: true,
+    });
+  };
+
+  // 共同行程
+  const shared = stops.filter(isShared).sort((a, b) => a.date.localeCompare(b.date) || byStopOrder(a, b));
+  shared.forEach((s, i) => {
     const day = dayOf[s.date];
     const when = day ? day.title : s.date;
-    if (s.cost) {
-      const g = byKey[budgetGroupOf(s.category).key];
-      g.amount += s.cost;
-      g.items.push({ id: s.id, label: `${stopCategory(s).emoji} ${s.title}`, sub: when, amount: s.cost });
-    }
-    if (s.arriveCost) {
-      const prev = ordered[i - 1];
-      const fromLabel = prev?.date && s.date ? prev.title : '上一站'; // 當天第一站接前一天的最後一站
-      const mode = s.arriveMode ? travelModeInfo(s.arriveMode) : null;
-      byKey.transport.amount += s.arriveCost;
-      byKey.transport.items.push({
-        id: s.id,
-        label: `${mode ? mode.emoji : '🧭'} ${fromLabel} → ${s.title}`,
-        sub: `${when}${mode ? `・${mode.label}` : ''}`,
-        amount: s.arriveCost,
-        fare: true,
-      });
-    }
+    addCost(s, when);
+    const prev = shared[i - 1];
+    addFare(s, prev?.date ? prev.title : '上一站', s.title, when); // 當天第一站接前一天的最後一站
     if (day) day.amount += stopTotal(s);
   });
+
+  // 分頭路線：花費算在成員身上
+  for (const lane of groupLanes(stops, members)) {
+    const day = dayOf[lane.date];
+    const ofDay = shared.filter((x) => x.date === lane.date);
+    const meeting = lane.phase === 'depart' ? ofDay[0] : ofDay[ofDay.length - 1];
+    const who = nameOf[lane.memberId] || '成員';
+    const sub = `${day ? day.title : lane.date}・${who}`;
+    lane.stops.forEach((s, i) => {
+      addCost(s, sub);
+      if (lane.phase === 'depart') addFare(s, s.title, lane.stops[i + 1]?.title || meeting?.title || '會合點', sub);
+      else addFare(s, lane.stops[i - 1]?.title || meeting?.title || '出發點', s.title, sub);
+      personal[lane.memberId] = (personal[lane.memberId] || 0) + stopTotal(s);
+      if (day) day.amount += stopTotal(s);
+    });
+  }
+
   groups.forEach((g) => g.items.sort((a, b) => b.amount - a.amount));
+  const total = groups.reduce((sum, g) => sum + g.amount, 0);
   return {
-    total: groups.reduce((sum, g) => sum + g.amount, 0), groups, days: dayList, backup,
+    total, shared: total - Object.values(personal).reduce((a, b) => a + b, 0), groups, days: dayList, backup, personal,
   };
+}
+
+/* ---------- 分頭路線（各自出發 / 各自回程） ----------
+ * 屬於某位成員的地點（memberId + phase），用在大家從不同地方出發、或散場後各自回家。
+ * depart：成員的地點依序走到當天第一個共同地點（會合點）；地點的 arriveMode / arriveCost 代表「從這裡前往下一站」。
+ * return：從當天最後一個共同地點出發，依序走到成員的地點；arriveMode / arriveCost 代表「到達這裡」。
+ * 兩種情況下，每個成員地點都「擁有」一段交通，設定交通方式與交通費都記在它身上。
+ */
+export const LANE_PHASES = [
+  { key: 'depart', label: '各自出發' },
+  { key: 'return', label: '各自回程' },
+];
+export const isShared = (s) => isPlanned(s) && !s.memberId;
+const LANE_BUFFER = 10; // 每段轉乘、等車預留（分鐘）
+
+/** 規劃路線用的地點序列（含會合點），每個元素的 arriveMode 是「到達它」的交通 */
+export function laneSequence(phase, laneStops, meeting) {
+  if (phase === 'depart') {
+    const seq = laneStops.map((s, i) => ({ ...s, arriveMode: i ? laneStops[i - 1].arriveMode : null }));
+    if (meeting && laneStops.length) seq.push({ ...meeting, arriveMode: laneStops[laneStops.length - 1].arriveMode || null });
+    return seq;
+  }
+  return meeting ? [{ ...meeting, arriveMode: null }, ...laneStops] : laneStops;
+}
+
+/** 序列中第 i 段（seq[i] → seq[i+1]）屬於哪個成員地點 */
+export const laneLegOwner = (phase, laneStops, hasMeeting, i) => laneStops[phase === 'return' && !hasMeeting ? i + 1 : i];
+
+/**
+ * 估算時間（分鐘，null = 無法估算）
+ * depart：從會合點的開始時間往回推，times[i] = 從 seq[i] 出發的時間
+ * return：從會合點的結束（或開始）時間往後推，times[i] = 抵達 seq[i] 的時間
+ */
+export function laneTimes(phase, seq, legs, meeting) {
+  const times = seq.map(() => null);
+  const n = seq.length;
+  if (!meeting || n < 2) return times;
+  const secOf = (i) => legSeconds(legs?.[i], seq[i], seq[i + 1]);
+  if (phase === 'depart') {
+    let t = timeToMin(meeting.startTime);
+    if (t == null) return times;
+    times[n - 1] = t;
+    for (let i = n - 2; i >= 0; i -= 1) {
+      t -= Math.ceil(secOf(i) / 60) + LANE_BUFFER;
+      times[i] = Math.floor(t / 5) * 5;
+    }
+    return times;
+  }
+  let t = timeToMin(meeting.endTime) ?? timeToMin(meeting.startTime);
+  if (t == null) return times;
+  times[0] = t;
+  for (let i = 0; i < n - 1; i += 1) {
+    t += Math.ceil(secOf(i) / 60) + LANE_BUFFER;
+    times[i + 1] = Math.ceil(t / 5) * 5;
+  }
+  return times;
+}
+
+/** 一段路的顯示文字（主行程與分頭路線共用） */
+export function segmentInfo(modeKey, custom, leg, from, to, fare) {
+  const info = travelModeInfo(modeKey);
+  const straight = fmtDistance(distanceKm(from, to));
+  let r;
+  if (!leg) r = { detail: '計算路線中…' };
+  else if (info.kind === 'line') r = { detail: `直線 ${straight}` };
+  else if (leg.failed) r = { detail: `無法規劃道路，改顯示直線 ${straight}`, failed: true };
+  else if (info.kind === 'rail') r = { detail: `約 ${fmtDuration(leg.duration)} · ${leg.alongTrack ? `軌道 ${fmtDistance(leg.distance)}` : `直線 ${straight}`}` };
+  else r = { detail: `${fmtDuration(leg.duration)} · ${fmtDistance(leg.distance)}` };
+  return {
+    info, custom, failed: !!r.failed, detail: fare ? `${r.detail} · ${fmtCost(fare)}` : r.detail,
+  };
+}
+
+/** 把行程地點整理成每天、每位成員、每個階段的分頭路線 */
+export function groupLanes(stops, members) {
+  const order = new Map(members.map((m, i) => [m.id, i]));
+  const map = new Map();
+  for (const s of stops) {
+    if (!isPlanned(s) || !s.memberId) continue;
+    const key = `${s.date}|${s.memberId}|${s.phase}`;
+    if (!map.has(key)) map.set(key, { key, date: s.date, memberId: s.memberId, phase: s.phase, stops: [] });
+    map.get(key).stops.push(s);
+  }
+  const lanes = [...map.values()];
+  lanes.forEach((l) => l.stops.sort(byStopOrder));
+  return lanes.sort((a, b) => (order.get(a.memberId) ?? 99) - (order.get(b.memberId) ?? 99));
 }

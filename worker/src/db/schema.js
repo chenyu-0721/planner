@@ -231,6 +231,9 @@ export const tripStops = sqliteTable('trip_stops', {
   notes: text('notes'),
   cost: real('cost'),
   arriveMode: text('arrive_mode'), // 從前一個地點到這裡的交通方式；空值 = 使用行程預設（由 API 檢查可用值）
+  // 分頭路線：屬於某位成員的「各自出發（depart）」或「各自回程（return）」地點；空值 = 大家一起的行程
+  memberId: integer('member_id').references(() => users.id, { onDelete: 'cascade' }),
+  phase: text('phase'), // depart | return（由 API 檢查），與 member_id 同時有值
   isBackup: integer('is_backup', { mode: 'boolean' }).notNull().default(false), // 備選：有日期 = 這天的備選；沒日期的地點一律視為備選
   customCategoryId: integer('custom_category_id').references(() => stopCategories.id, { onDelete: 'set null' }), // 自訂圖標；空值 = 使用 category 的內建圖標
   arriveCost: real('arrive_cost'), // 從前一個地點到這裡的交通費（例如高鐵票），計入「交通」預算

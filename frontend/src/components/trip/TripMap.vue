@@ -41,6 +41,7 @@ const props = defineProps({
   days: { type: Array, required: true }, // tripDays()
   stops: { type: Array, required: true },
   routes: { type: Object, default: () => ({}) }, // { [date]: { coords, legs } }
+  lanes: { type: Array, default: () => [] }, // 分頭路線（只在選了某一天時傳入）：{ key, color, name, stops, seq, lines }
   routing: { type: Boolean, default: false },
   selectedDate: { type: String, default: null }, // null = 全部、'unscheduled' = 備選
   focusStopId: { type: Number, default: null },
@@ -126,7 +127,7 @@ function visibleGroups() {
     const ofDay = props.stops.filter((s) => s.date === day.date).sort(byStopOrder);
     if (!showBackupsOnly) {
       groups.push({
-        key: day.date, color: day.color, label: day.title, stops: ofDay.filter((s) => !s.isBackup), numbered: true, route: props.routes[day.date],
+        key: day.date, color: day.color, label: day.title, stops: ofDay.filter((s) => !s.isBackup && !s.memberId), numbered: true, route: props.routes[day.date],
       });
     }
     const backups = ofDay.filter((s) => s.isBackup);
@@ -161,6 +162,35 @@ function render() {
     prevLast = points[points.length - 1];
   }
 
+  // 分頭路線：成員顏色的細虛線，圖標標示成員名字的第一個字
+  for (const lane of props.lanes) {
+    const lines = lane.lines?.length ? lane.lines : [{ coords: lane.seq.map((s) => [s.lat, s.lng]) }];
+    for (const line of lines) {
+      L.polyline(line.coords, { color: '#fff', weight: 6, opacity: 0.9, interactive: false }).addTo(layer);
+      L.polyline(line.coords, {
+        color: lane.color, weight: 3.5, opacity: 0.95, dashArray: '8 7', lineCap: 'butt',
+      }).bindTooltip(`${escapeHtml(lane.name)}的路線`, { sticky: true }).addTo(layer);
+    }
+  }
+  for (const lane of props.lanes) {
+    lane.stops.forEach((s) => {
+      const marker = L.marker([s.lat, s.lng], {
+        icon: pinIcon(s, escapeHtml((lane.name || '?').slice(0, 1)), lane.color),
+        draggable: true,
+        autoPan: true,
+        riseOnHover: true,
+      });
+      marker.bindTooltip(`<b>${escapeHtml(s.title)}</b><br><span style="color:#616161">${escapeHtml(lane.name)}</span>`, { direction: 'top' });
+      marker.on('click', () => emit('select', s));
+      marker.on('dragend', (e) => {
+        const { lat, lng } = e.target.getLatLng();
+        emit('move', s, { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) });
+      });
+      marker.addTo(layer);
+      markers.set(s.id, marker);
+    });
+  }
+
   for (const g of groups) {
     g.stops.forEach((s, i) => {
       const marker = L.marker([s.lat, s.lng], {
@@ -187,7 +217,10 @@ function fit(animate = true) {
   if (!map) return;
   // 以行程中的地點為主；只有備選時才縮放到備選
   const groups = visibleGroups();
-  const planned = groups.filter((g) => !g.backup).flatMap((g) => g.stops.map((s) => [s.lat, s.lng]));
+  const planned = [
+    ...groups.filter((g) => !g.backup).flatMap((g) => g.stops.map((s) => [s.lat, s.lng])),
+    ...props.lanes.flatMap((l) => l.stops.map((s) => [s.lat, s.lng])),
+  ];
   const pts = planned.length ? planned : groups.flatMap((g) => g.stops.map((s) => [s.lat, s.lng]));
   if (!pts.length) map.setView(TAIWAN_CENTER, MIN_ZOOM, { animate });
   else if (pts.length === 1) map.setView(pts[0], 15, { animate });
@@ -255,6 +288,7 @@ onBeforeUnmount(() => {
 
 watch(() => props.stops, render, { deep: true });
 watch(() => props.routes, render);
+watch(() => props.lanes, render);
 watch(() => props.days, render);
 watch(customCategories, render, { deep: true }); // 自訂圖標改了，地圖圖標跟著換
 watch(() => props.selectedDate, () => {

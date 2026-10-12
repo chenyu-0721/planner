@@ -25,6 +25,7 @@ export const LIMITS = {
   categoryLabel: 20,
 };
 export const MAX_CUSTOM_CATEGORIES = 60;
+export const LANE_PHASES = ['depart', 'return'];
 
 export const USERNAME_RE = /^[A-Za-z0-9_.-]{3,50}$/;
 export const MIN_PASSWORD = 6;

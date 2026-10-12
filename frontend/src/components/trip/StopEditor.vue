@@ -40,7 +40,13 @@
         </div>
       </div>
 
-      <div>
+      <div v-if="form.lane" class="rounded-md bg-hover px-3 py-2 text-sm">
+        👥 <b>{{ form.lane.name }}</b> 的{{ form.lane.phaseLabel }}路線・{{ dayLabel }}
+        <p class="mt-0.5 text-[11px] leading-4 text-ink-4">
+          {{ form.lane.phase === 'depart' ? '只屬於這位成員，會依序連到這天第一個地點會合。' : '只屬於這位成員，會從這天最後一個地點接過來。' }}
+        </p>
+      </div>
+      <div v-else>
         <div class="flex rounded-md border border-line-2 p-0.5 mb-2 text-sm">
           <button
             v-for="m in MODES"
@@ -92,9 +98,9 @@
           <p class="mt-1 text-[11px] leading-4 text-ink-4">計入「{{ budgetGroupOf(form.category).label }}」</p>
         </div>
         <div>
-          <label class="field-label">到這裡的交通費</label>
+          <label class="field-label">{{ form.lane?.phase === 'depart' ? '從這裡出發的交通費' : '到這裡的交通費' }}</label>
           <input ref="arriveCostEl" v-model="form.arriveCost" type="number" min="0" step="1" class="input" placeholder="0" />
-          <p class="mt-1 text-[11px] leading-4 text-ink-4">從上一站過來的車票、油錢等，計入「交通」</p>
+          <p class="mt-1 text-[11px] leading-4 text-ink-4">{{ form.lane?.phase === 'depart' ? '前往下一站的車票、油錢等' : '從上一站過來的車票、油錢等' }}，計入「交通」</p>
         </div>
       </div>
 
@@ -116,7 +122,9 @@
 </template>
 
 <script setup>
-import { nextTick, reactive, ref, watch } from 'vue';
+import {
+  computed, nextTick, reactive, ref, watch,
+} from 'vue';
 import Modal from '../Modal.vue';
 import Icon from '../Icon.vue';
 import CategoryManager from './CategoryManager.vue';
@@ -136,6 +144,10 @@ const error = ref('');
 const titleEl = ref(null);
 const arriveCostEl = ref(null);
 const managerOpen = ref(false);
+const dayLabel = computed(() => {
+  const d = props.days.find((x) => x.date === form.date);
+  return d ? `${d.title}（${d.subtitle}）` : '';
+});
 const MODES = [{ key: 'plan', label: '排入行程', backup: false }, { key: 'backup', label: '🔖 放到備選', backup: true }];
 
 function setBackup(backup) {
@@ -164,6 +176,9 @@ watch(() => props.modelValue, async (v) => {
     customCategoryId: customCategories.some((c) => c.id === v.customCategoryId) ? v.customCategoryId : null,
     date: v.date ?? null,
     isBackup: !v.date || !!v.isBackup,
+    memberId: v.memberId ?? null,
+    phase: v.phase ?? null,
+    lane: v.lane ?? null,
     startTime: v.startTime || '',
     endTime: v.endTime || '',
     address: v.address || '',

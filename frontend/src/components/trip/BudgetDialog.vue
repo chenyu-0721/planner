@@ -7,7 +7,7 @@
           <div>
             <div class="text-xs text-ink-3">預估總花費</div>
             <div class="text-2xl font-semibold tabular-nums">{{ fmtCost(budget.total) || '$0' }}</div>
-            <div v-if="memberCount > 1 && budget.total" class="text-xs text-ink-3">{{ memberCount }} 人平均每人約 {{ fmtCost(Math.round(budget.total / memberCount)) }}</div>
+            <div v-if="members.length > 1 && budget.total && !hasPersonal" class="text-xs text-ink-3">{{ members.length }} 人平均每人約 {{ fmtCost(Math.round(budget.total / members.length)) }}</div>
           </div>
           <div class="w-36 shrink-0">
             <label class="text-xs text-ink-3" for="trip-budget">預算上限</label>
@@ -39,6 +39,20 @@
       </p>
 
       <template v-else>
+        <!-- 每人：共同花費平分，加上自己的各自出發 / 回程花費 -->
+        <section v-if="members.length > 1 && hasPersonal">
+          <h3 class="text-sm font-semibold mb-1">每人</h3>
+          <p class="text-[11px] text-ink-4 mb-2">共同花費 {{ fmtCost(budget.shared) || '$0' }} 由 {{ members.length }} 人平分，再加上各自出發 / 回程的花費</p>
+          <div class="space-y-1">
+            <div v-for="m in perPerson" :key="m.id" class="flex items-center gap-2 py-0.5">
+              <Avatar :user="m" :size="22" />
+              <span class="flex-1 min-w-0 truncate text-sm">{{ m.displayName }}</span>
+              <span class="text-xs text-ink-3 tabular-nums">{{ m.own ? `自己 ${fmtCost(m.own)}` : '' }}</span>
+              <span class="w-20 text-right text-sm font-semibold tabular-nums">{{ fmtCost(m.amount) }}</span>
+            </div>
+          </div>
+        </section>
+
         <!-- 依類別 -->
         <section>
           <h3 class="text-sm font-semibold mb-2">依類別</h3>
@@ -98,6 +112,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import Modal from '@/components/Modal.vue';
 import Icon from '@/components/Icon.vue';
+import Avatar from '@/components/Avatar.vue';
 import { computeBudget, fmtCost } from '@/utils/trip';
 
 const props = defineProps({
@@ -105,12 +120,17 @@ const props = defineProps({
   trip: { type: Object, required: true },
   stops: { type: Array, required: true },
   days: { type: Array, required: true },
-  memberCount: { type: Number, default: 1 },
+  members: { type: Array, default: () => [] },
 });
 // edit(stopId, isFare)：點明細開啟該地點編輯
 const emit = defineEmits(['update:modelValue', 'save-budget', 'edit']);
 
-const budget = computed(() => computeBudget(props.stops, props.days));
+const budget = computed(() => computeBudget(props.stops, props.days, props.members));
+const hasPersonal = computed(() => Object.keys(budget.value.personal).length > 0);
+const perPerson = computed(() => props.members.map((m) => {
+  const own = budget.value.personal[m.id] || 0;
+  return { ...m, own, amount: Math.round(budget.value.shared / props.members.length + own) };
+}));
 const limit = computed(() => props.trip.budget || 0);
 const over = computed(() => limit.value > 0 && budget.value.total > limit.value);
 const dayRows = computed(() => budget.value.days);
