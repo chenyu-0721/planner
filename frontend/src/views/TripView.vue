@@ -90,19 +90,14 @@
       >
         <!-- 新增地點 -->
         <div class="p-3 border-b border-line bg-white space-y-2">
-          <form class="flex gap-2" @submit.prevent="search">
-            <div class="relative flex-1 min-w-0">
-              <Icon name="search" :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" />
-              <input v-model="query" class="input !pl-8" placeholder="搜尋台灣的地點或地址" maxlength="200" @input="onQueryInput" />
-            </div>
-            <button type="button" class="btn btn-default !px-2.5 shrink-0" :class="picking ? '!border-accent !text-accent' : ''" title="在地圖上點選位置" @click="startPick">
-              <Icon name="locate" :size="16" /><span class="hidden lg:inline">地圖點選</span>
-            </button>
+          <form class="relative" @submit.prevent="search">
+            <Icon name="search" :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" />
+            <input v-model="query" class="input !pl-8" placeholder="搜尋台灣的地點或地址" maxlength="200" @input="onQueryInput" />
           </form>
           <div v-if="searching" class="text-xs text-ink-3 px-1">搜尋中…</div>
           <div v-else-if="results" class="rounded border border-line bg-white max-h-64 overflow-y-auto thin-scroll">
             <div class="flex items-center justify-between px-3 h-8 text-xs text-ink-3 border-b border-line">
-              <span>{{ results.length ? '點選地點加入行程' : '找不到符合的地點，可改用「地圖點選」' }}</span>
+              <span>{{ results.length ? '點選地點加入行程' : '找不到符合的地點，換個關鍵字試試' }}</span>
               <button class="hover:text-ink cursor-pointer" @click="results = null"><Icon name="x" :size="13" /></button>
             </div>
             <button v-for="(r, i) in results" :key="i" class="w-full text-left px-3 py-2 hover:bg-hover cursor-pointer border-b border-line last:border-0" @click="openNewStop(r)">
@@ -223,12 +218,9 @@
           :routes="routes"
           :routing="routing"
           :selected-date="selectedDate"
-          :picking="picking"
           :focus-stop-id="focusStopId"
           @select="onMarkerSelect"
           @move="onMarkerMove"
-          @pick="onPick"
-          @cancel-pick="picking = false"
         />
       </div>
     </div>
@@ -253,7 +245,7 @@ import api from '@/api';
 import { sortOrderAt } from '@/utils/planner';
 import {
   tripDays, fmtTripRange, categoryInfo, distanceKm, fmtDistance, fmtCost, byStopOrder,
-  sortOrderForTime, searchPlaces, reverseGeocode, UNSCHEDULED_COLOR,
+  sortOrderForTime, searchPlaces, UNSCHEDULED_COLOR,
   TRAVEL_MODES, travelModeInfo, fetchRoute, fmtDuration, googleDirectionsUrl,
 } from '@/utils/trip';
 import { useAuthStore } from '@/stores/auth';
@@ -274,7 +266,6 @@ const error = ref('');
 
 const selectedDate = ref(null);
 const focusStopId = ref(null);
-const picking = ref(false);
 const editing = ref(null);
 const saving = ref(false);
 const settingsOpen = ref(false);
@@ -427,20 +418,6 @@ function openNewStop(place) {
   editing.value = {
     title: place.title, address: place.address, lat: place.lat, lng: place.lng, category: 'sight', date: defaultDate(),
   };
-}
-
-function startPick() {
-  picking.value = !picking.value;
-  if (picking.value) {
-    mobileTab.value = 'map';
-    results.value = null;
-  }
-}
-
-async function onPick(latlng) {
-  picking.value = false;
-  const place = await reverseGeocode(latlng.lat, latlng.lng);
-  openNewStop({ title: place?.title || '新地點', address: place?.address || '', ...latlng });
 }
 
 /* ---- 編輯 / 儲存地點 ---- */

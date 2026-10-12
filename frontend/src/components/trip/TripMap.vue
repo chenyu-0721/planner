@@ -1,11 +1,7 @@
 <template>
   <div class="relative h-full w-full isolate">
-    <div ref="mapEl" class="h-full w-full bg-[#e8eef3]" :class="picking ? 'trip-map-picking' : ''"></div>
+    <div ref="mapEl" class="h-full w-full bg-[#e8eef3]"></div>
 
-    <div v-if="picking" class="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-2 rounded-full bg-[#323130] text-white text-sm pl-4 pr-1.5 py-1.5 card-shadow-hover whitespace-nowrap">
-      <Icon name="locate" :size="16" />點選地圖上的位置來新增地點
-      <button class="rounded-full bg-white/15 hover:bg-white/25 px-2.5 h-7 cursor-pointer" @click="$emit('cancel-pick')">取消</button>
-    </div>
 
     <!-- 底圖切換 -->
     <div class="absolute top-3 right-3 z-[1000] flex rounded bg-white card-shadow-hover overflow-hidden text-xs">
@@ -47,10 +43,9 @@ const props = defineProps({
   routes: { type: Object, default: () => ({}) }, // { [date]: { coords, legs } }
   routing: { type: Boolean, default: false },
   selectedDate: { type: String, default: null }, // null = 全部、'unscheduled' = 未排入
-  picking: { type: Boolean, default: false },
   focusStopId: { type: Number, default: null },
 });
-const emit = defineEmits(['select', 'move', 'pick', 'cancel-pick']);
+const emit = defineEmits(['select', 'move']);
 
 const ui = useUiStore();
 const mapEl = ref(null);
@@ -195,10 +190,6 @@ onMounted(() => {
   }).setView(TAIWAN_CENTER, MIN_ZOOM);
   setBase(baseKey.value);
   layer = L.layerGroup().addTo(map);
-  map.on('click', (e) => {
-    if (!props.picking) return;
-    emit('pick', { lat: Number(e.latlng.lat.toFixed(6)), lng: Number(e.latlng.lng.toFixed(6)) });
-  });
   render();
   fit(false); // 第一次直接顯示在正確位置
   // 容器大小改變（手機切換分頁、側欄收合）時重新計算

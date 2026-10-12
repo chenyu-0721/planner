@@ -109,18 +109,18 @@ export const inTaiwan = (lat, lng) => lat >= TAIWAN_BOUNDS[0][0] && lat <= TAIWA
   && lng >= TAIWAN_BOUNDS[0][1] && lng <= TAIWAN_BOUNDS[1][1];
 
 /* ---------- 地點搜尋 ----------
- * 搜尋建議：Photon（OpenStreetMap 資料，允許邊打字邊搜尋），限定台灣範圍
- * 地圖點選取得地址：Nominatim（每秒最多 1 次）
+ * Photon（OpenStreetMap 資料，允許邊打字邊搜尋），限定台灣範圍
+ * lang=default：使用當地名稱（台灣即中文）。不指定時 Photon 會依瀏覽器語言回傳，
+ * 但它不支援中文，會改用英文名稱（例如「Taipei 101」）
  */
 const PHOTON = 'https://photon.komoot.io/api/';
-const NOMINATIM = 'https://nominatim.openstreetmap.org';
 
 const withHao = (n) => (n ? (/[號号]$/.test(n) ? n : `${n}號`) : '');
 const joinAddress = (...parts) => parts.filter(Boolean).filter((p, i, arr) => arr.indexOf(p) === i).join('');
 
 export async function searchPlaces(query, signal) {
   const [[s, w], [n, e]] = TAIWAN_BOUNDS;
-  const url = `${PHOTON}?q=${encodeURIComponent(query)}&limit=8&bbox=${w},${s},${e},${n}`;
+  const url = `${PHOTON}?q=${encodeURIComponent(query)}&limit=8&lang=default&bbox=${w},${s},${e},${n}`;
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error('地點搜尋失敗，請稍後再試');
   const data = await res.json();
@@ -139,25 +139,6 @@ export async function searchPlaces(query, signal) {
       };
     })
     .filter((r, i, arr) => arr.findIndex((x) => x.title === r.title && Math.abs(x.lat - r.lat) < 1e-4) === i);
-}
-
-let lastReverse = 0;
-export async function reverseGeocode(lat, lng) {
-  try {
-    const wait = lastReverse + 1100 - Date.now();
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-    lastReverse = Date.now();
-    const url = `${NOMINATIM}/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=zh-TW&lat=${lat}&lon=${lng}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const r = await res.json();
-    if (r.error) return null;
-    const a = r.address || {};
-    const address = joinAddress(a.county, a.city, a.town || a.suburb || a.city_district, a.road, withHao(a.house_number));
-    return { title: r.name || joinAddress(a.road, withHao(a.house_number)) || '新地點', address: address || r.display_name };
-  } catch {
-    return null;
-  }
 }
 
 /* ---------- 道路路線（OSRM，FOSSGIS 免費服務） ---------- */

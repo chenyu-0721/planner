@@ -239,9 +239,7 @@ npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動
 左側選單「我的行程」是獨立的旅遊規劃功能，地圖鎖定在台灣範圍（含澎湖、金門、馬祖、蘭嶼、綠島）。
 
 1. **新增行程**：輸入名稱、開始與結束日期（最多 60 天）、色彩
-2. **加入地點**，兩種方式：
-   - 在左上搜尋框輸入地名或地址，會即時出現台灣的地點建議，點選即可加入
-   - 按「地圖點選」，再點地圖上的位置，會自動帶出地名與地址
+2. **加入地點**：在左上搜尋框輸入地名或地址，會即時出現台灣的地點建議（中文名稱與地址），點選即可加入
 3. **編輯地點**：名稱、圖標（景點 / 美食 / 住宿 / 交通 / 購物 / 活動 / 其他）、日期、開始與結束時間、地址、預估花費、備註
 4. **排序**：
    - 拖曳清單中的地點可調整順序，或拖到另一天
@@ -268,8 +266,7 @@ npm run dev:frontend    # 前端 http://localhost:5173（熱更新，/api 自動
 | --- | --- | --- |
 | 臺灣通用電子地圖、正射影像 | 底圖 | [內政部國土測繪中心](https://maps.nlsc.gov.tw/)（政府資料開放授權） |
 | OpenStreetMap | 底圖 | [OpenStreetMap](https://www.openstreetmap.org/copyright) |
-| Photon | 地點搜尋建議 | [komoot](https://photon.komoot.io/) |
-| Nominatim | 地圖點選時取得地址 | [OpenStreetMap](https://nominatim.org/) |
+| Photon | 地點搜尋建議（固定使用當地中文名稱） | [komoot](https://photon.komoot.io/) |
 | OSRM | 道路路線、距離、時間 | [FOSSGIS](https://routing.openstreetmap.de/) |
 
 這些都是公益性質的免費服務，適合個人或小團隊使用；若使用量很大，建議改用付費服務商。
