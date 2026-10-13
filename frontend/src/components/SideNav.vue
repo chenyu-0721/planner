@@ -33,18 +33,27 @@
           <Icon :name="pinnedOpen ? 'chevron-down' : 'chevron-right'" :size="14" />
           釘選
         </button>
-        <template v-if="pinnedOpen">
-          <div v-if="!plans.pinned.length" class="px-3 py-1.5 text-xs text-ink-4">釘選的計劃會顯示在這裡</div>
-          <PlanNavItem v-for="p in plans.pinned" :key="'p' + p.id" :plan="p" />
-        </template>
+        <!-- 拖曳調整順序；在「釘選」與「計劃」之間拖曳可釘選 / 取消釘選 -->
+        <div v-show="pinnedOpen" class="relative">
+          <draggable :model-value="plans.pinned" item-key="id" group="nav-plans" class="min-h-8" v-bind="dragOptions" @change="(e) => onMove(e, plans.pinned, true)">
+            <template #item="{ element: p }">
+              <PlanNavItem :plan="p" />
+            </template>
+          </draggable>
+          <div v-if="!plans.pinned.length" class="absolute inset-0 px-3 flex items-center text-xs text-ink-4 pointer-events-none">把計劃拖到這裡即可釘選</div>
+        </div>
 
-        <button class="w-full flex items-center gap-1 px-2 h-7 mt-2 text-xs font-semibold text-ink-3 cursor-pointer hover:text-ink" @click="recentOpen = !recentOpen">
-          <Icon :name="recentOpen ? 'chevron-down' : 'chevron-right'" :size="14" />
-          最近
+        <button class="w-full flex items-center gap-1 px-2 h-7 mt-2 text-xs font-semibold text-ink-3 cursor-pointer hover:text-ink" @click="othersOpen = !othersOpen">
+          <Icon :name="othersOpen ? 'chevron-down' : 'chevron-right'" :size="14" />
+          計劃
         </button>
-        <template v-if="recentOpen">
-          <PlanNavItem v-for="p in plans.recent.slice(0, 8)" :key="'r' + p.id" :plan="p" />
-        </template>
+        <div v-show="othersOpen">
+          <draggable :model-value="plans.others" item-key="id" group="nav-plans" class="min-h-8" v-bind="dragOptions" @change="(e) => onMove(e, plans.others, false)">
+            <template #item="{ element: p }">
+              <PlanNavItem :plan="p" />
+            </template>
+          </draggable>
+        </div>
       </template>
 
       <template v-if="auth.isAdmin">
@@ -57,19 +66,39 @@
 
 <script setup>
 import { ref, h } from 'vue';
+import draggable from 'vuedraggable';
 import { RouterLink, useRoute } from 'vue-router';
 import Icon from './Icon.vue';
 import PlanIcon from './PlanIcon.vue';
 import { useUiStore } from '@/stores/ui';
 import { usePlansStore } from '@/stores/plans';
 import { useAuthStore } from '@/stores/auth';
+import { sortOrderAt } from '@/utils/planner';
 
 const ui = useUiStore();
 const plans = usePlansStore();
 const auth = useAuthStore();
 const route = useRoute();
 const pinnedOpen = ref(true);
-const recentOpen = ref(true);
+const othersOpen = ref(true);
+
+// 手機長按 0.25 秒才開始拖曳，避免捲動時誤拖；滑鼠直接拖
+const dragOptions = {
+  animation: 150,
+  delay: 250,
+  delayOnTouchOnly: true,
+  forceFallback: true,
+  fallbackOnBody: true,
+  ghostClass: 'drag-ghost',
+  fallbackClass: 'drag-fallback',
+};
+function onMove(e, list, pinned) {
+  const evt = e.added || e.moved;
+  if (!evt) return;
+  const p = evt.element;
+  const rest = list.filter((x) => x.id !== p.id);
+  plans.move(p.id, sortOrderAt(rest, evt.newIndex), pinned).catch((err) => ui.error(err));
+}
 
 const itemClass = (active, collapsed) => [
   'relative flex items-center gap-3 h-9 rounded text-sm text-ink hover:bg-black/5',

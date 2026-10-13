@@ -52,6 +52,7 @@ router.get('/', async (req, res) => {
         createdAt: m.Plan.createdAt,
         updatedAt: m.Plan.updatedAt,
         pinned: m.pinned,
+        sortOrder: m.sortOrder,
         role: m.role,
         lastViewedAt: m.lastViewedAt,
         taskCount: Number(statMap[m.planId]?.total || 0),
@@ -138,6 +139,18 @@ router.delete('/:id', async (req, res) => {
   if (!canManage(req.user, plan)) throw new HttpError(403, '只有計劃擁有者可以刪除計劃');
   await plan.destroy();
   res.json({ ok: true });
+});
+
+// 側欄拖曳：調整自己的計劃順序，拖到「釘選」或拖出來時一併改釘選狀態
+router.put('/:id/position', async (req, res) => {
+  const member = await PlanMember.findOne({ where: { planId: req.params.id, userId: req.user.id } });
+  if (!member) throw new HttpError(404, '找不到計劃');
+  const sortOrder = Number(req.body?.sortOrder);
+  if (!Number.isFinite(sortOrder)) throw new HttpError(400, '順序不正確');
+  member.sortOrder = sortOrder;
+  if (typeof req.body?.pinned === 'boolean') member.pinned = req.body.pinned;
+  await member.save({ silent: true });
+  res.json({ sortOrder: member.sortOrder, pinned: member.pinned });
 });
 
 router.put('/:id/pin', async (req, res) => {

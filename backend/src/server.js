@@ -6,6 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const { sequelize } = require('./models');
+const { ensureSchema } = require('./utils/schema');
 const { requireAuth } = require('./middleware/auth');
 
 const app = express();
@@ -59,6 +60,7 @@ app.use((err, req, res, next) => {
   try {
     await sequelize.authenticate();
     await sequelize.sync();
+    await ensureSchema();
     app.listen(PORT, () => console.log(`Planner 伺服器啟動：http://localhost:${PORT}`));
   } catch (err) {
     console.error('資料庫連線失敗：', err.message);

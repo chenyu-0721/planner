@@ -73,7 +73,15 @@ const PlanMember = sequelize.define('PlanMember', {
   role: { type: DataTypes.ENUM('owner', 'member'), allowNull: false, defaultValue: 'member' },
   pinned: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   lastViewedAt: { type: DataTypes.DATE },
+  sortOrder: { type: DataTypes.DOUBLE }, // 側欄順序（每個人自己的；空值排最前面，例如剛被加入的計劃）
 }, { tableName: 'plan_members', indexes: [{ unique: true, fields: ['plan_id', 'user_id'] }] });
+
+// 新加入的計劃（自己建立或被邀請）排在側欄最前面
+PlanMember.beforeCreate(async (m, options) => {
+  if (m.sortOrder != null) return;
+  const min = await PlanMember.min('sortOrder', { where: { userId: m.userId }, transaction: options.transaction });
+  m.sortOrder = (Number.isFinite(min) ? min : 1) - 1;
+});
 
 const Bucket = sequelize.define('Bucket', {
   planId: { type: DataTypes.INTEGER, allowNull: false },
