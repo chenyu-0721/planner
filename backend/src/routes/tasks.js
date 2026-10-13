@@ -13,10 +13,10 @@ const {
 const router = express.Router();
 
 const uploadDir = path.join(__dirname, '../../uploads');
-fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({
   storage: multer.diskStorage({
-    destination: uploadDir,
+    // 每次上傳都確認資料夾存在（切換 git 分支或雲端同步可能把空資料夾刪掉）
+    destination: (req, file, cb) => fs.mkdir(uploadDir, { recursive: true }, (err) => cb(err, uploadDir)),
     filename: (req, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${path.extname(file.originalname).slice(0, 10)}`),
   }),
   limits: { fileSize: 20 * 1024 * 1024 },
@@ -30,6 +30,12 @@ function clipName(name, max = LIMITS.attachmentName) {
 }
 
 const isDate = (v) => v === null || v === '' || /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+// 意見中的圖片以一行 ![名稱](/uploads/檔名) 表示（只允許本站上傳的檔案）
+const COMMENT_IMAGE_RE = /^!\[[^\]\n]*\]\((\/uploads\/[\w.-]+)\)$/gm;
+const IMAGE_TYPES = /^image\/(png|jpe?g|gif|webp|bmp)$/;
+const removeUpload = (url) => fs.unlink(path.join(uploadDir, path.basename(url)), () => {});
+const commentImages = (content) => [...String(content || '').matchAll(COMMENT_IMAGE_RE)].map((m) => m[1]);
 
 // 工作詳細資料（含意見）
 router.get('/:id', async (req, res) => {
@@ -102,9 +108,13 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   const task = await loadTaskWithAccess(req.user, req.params.id);
-  const files = await Attachment.findAll({ where: { taskId: task.id, type: 'file' } });
+  const [files, comments] = await Promise.all([
+    Attachment.findAll({ where: { taskId: task.id, type: 'file' } }),
+    Comment.findAll({ where: { taskId: task.id }, attributes: ['content'] }),
+  ]);
   await task.destroy();
-  files.forEach((f) => fs.unlink(path.join(uploadDir, path.basename(f.url)), () => {}));
+  files.forEach((f) => removeUpload(f.url));
+  comments.flatMap((c) => commentImages(c.content)).forEach(removeUpload);
   res.json({ ok: true });
 });
 
@@ -172,9 +182,23 @@ router.delete('/:id/attachments/:attId', async (req, res) => {
   const task = await loadTaskWithAccess(req.user, req.params.id);
   const att = await Attachment.findOne({ where: { id: req.params.attId, taskId: task.id } });
   if (!att) throw new HttpError(404, '找不到附件');
-  if (att.type === 'file') fs.unlink(path.join(uploadDir, path.basename(att.url)), () => {});
+  if (att.type === 'file') removeUpload(att.url);
   await att.destroy();
   res.json({ ok: true });
+});
+
+// 意見中貼上的圖片：只存檔、回傳網址，送出意見時才寫入內容
+router.post('/:id/images', upload.single('file'), async (req, res) => {
+  await loadTaskWithAccess(req.user, req.params.id);
+  if (!req.file) throw new HttpError(400, '請選擇圖片');
+  if (!IMAGE_TYPES.test(req.file.mimetype)) {
+    removeUpload(req.file.filename);
+    throw new HttpError(400, '只能貼上 PNG、JPG、GIF、WebP 圖片');
+  }
+  res.status(201).json({
+    url: `/uploads/${req.file.filename}`,
+    name: clipName(Buffer.from(req.file.originalname, 'latin1').toString('utf8'), 60),
+  });
 });
 
 // 意見
@@ -198,6 +222,7 @@ router.delete('/:id/comments/:commentId', async (req, res) => {
   if (!c) throw new HttpError(404, '找不到意見');
   if (c.userId !== req.user.id && req.user.role !== 'admin') throw new HttpError(403, '只能刪除自己的意見');
   await c.destroy();
+  commentImages(c.content).forEach(removeUpload);
   res.json({ ok: true });
 });
 

@@ -26,7 +26,13 @@ app.use('/api/me', requireAuth, require('./routes/me'));
 app.use('/api', (req, res) => res.status(404).json({ message: 'API 不存在' }));
 
 // 附件
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// 上傳的檔案一律不能執行程式（例如 HTML、SVG 裡的 script），圖片照常顯示
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+  setHeaders: (res) => {
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox");
+  },
+}));
 
 // 前端（vue build 輸出至 backend/public）
 app.use(express.static(publicDir));

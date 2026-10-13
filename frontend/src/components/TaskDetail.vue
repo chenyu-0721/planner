@@ -8,7 +8,7 @@
     </template>
 
     <div v-if="loading && !task" class="px-6 py-16 text-center text-ink-3">載入中…</div>
-    <div v-else-if="task" class="px-6 pb-6">
+    <div v-else-if="task" class="px-6 pb-6" @paste="onPaste">
       <!-- 標題 -->
       <div class="flex items-start gap-2 mb-1">
         <button class="mt-2 cursor-pointer" :title="done ? '標示為未完成' : '標示為完成'" @click="save({ progress: done ? 0 : 100 })">
@@ -121,7 +121,7 @@
             在卡片上顯示
           </label>
         </div>
-        <textarea v-model="notes" maxlength="10000" rows="4" class="input !h-auto py-2 resize-y min-h-20" placeholder="輸入描述或新增附註" @blur="saveNotes"></textarea>
+        <textarea v-model="notes" maxlength="10000" rows="4" class="input !h-auto py-2 resize-y min-h-20" placeholder="輸入描述或新增附註（可直接 Ctrl+V 貼上圖片，會加入附件）" @blur="saveNotes"></textarea>
       </div>
 
       <!-- 檢查清單 -->
@@ -164,10 +164,18 @@
           <label class="field-label !mb-0">附件</label>
         </div>
         <div v-if="task.attachments.length" class="space-y-1 mb-2">
-          <div v-for="a in task.attachments" :key="a.id" class="group/at flex items-center gap-2 h-10 px-2 rounded border border-line hover:bg-hover">
-            <Icon :name="a.type === 'link' ? 'link' : a.mimeType?.startsWith('image/') ? 'image' : 'file'" :size="16" class="text-ink-3" />
-            <a :href="a.url" target="_blank" rel="noopener" class="flex-1 truncate text-sm text-accent hover:underline">{{ a.name }}</a>
-            <label v-if="a.mimeType?.startsWith('image/')" class="flex items-center gap-1 text-xs text-ink-3 cursor-pointer">
+          <div v-for="a in task.attachments" :key="a.id" class="group/at flex items-center gap-2 min-h-10 px-2 py-1 rounded border border-line hover:bg-hover">
+            <template v-if="isImage(a)">
+              <button class="shrink-0 size-12 rounded overflow-hidden border border-line bg-hover cursor-zoom-in" title="點擊放大" @click="viewAttachment(a)">
+                <img :src="a.url" :alt="a.name" class="size-full object-cover" loading="lazy" />
+              </button>
+              <button class="flex-1 min-w-0 truncate text-left text-sm text-accent hover:underline cursor-zoom-in" @click="viewAttachment(a)">{{ a.name }}</button>
+            </template>
+            <template v-else>
+              <Icon :name="a.type === 'link' ? 'link' : 'file'" :size="16" class="text-ink-3" />
+              <a :href="a.url" target="_blank" rel="noopener" class="flex-1 truncate text-sm text-accent hover:underline">{{ a.name }}</a>
+            </template>
+            <label v-if="isImage(a)" class="flex items-center gap-1 text-xs text-ink-3 cursor-pointer shrink-0">
               <input type="checkbox" class="accent-accent" :checked="task.previewType === 'reference'" @change="setPreview('reference', $event.target.checked)" />
               在卡片上顯示
             </label>
@@ -189,16 +197,26 @@
           <button class="menu-item" @click="fileEl.click()"><Icon name="upload" />檔案</button>
           <button class="menu-item" @click="linkForm = { url: '', name: '' }"><Icon name="link" />連結</button>
         </Popover>
-        <input ref="fileEl" type="file" class="hidden" @change="uploadFile" />
+        <span class="ml-1 text-xs text-ink-4">也可以直接 Ctrl+V 貼上圖片</span>
+        <input ref="fileEl" type="file" multiple class="hidden" @change="uploadFile" />
       </div>
 
       <!-- 意見 -->
       <div>
         <label class="field-label">意見</label>
         <div class="rounded border border-line-2 focus-within:border-accent">
-          <textarea v-model="newComment" maxlength="2000" rows="2" class="w-full resize-none outline-none px-2.5 py-2 text-sm rounded" placeholder="在此輸入您的訊息" @keydown.ctrl.enter="addComment"></textarea>
+          <textarea ref="commentEl" v-model="newComment" maxlength="1500" rows="2" class="w-full resize-none outline-none px-2.5 py-2 text-sm rounded" placeholder="在此輸入您的訊息（可直接 Ctrl+V 貼上圖片）" @keydown.ctrl.enter="addComment"></textarea>
+          <div v-if="commentImages.length" class="flex flex-wrap gap-2 px-2.5 pb-2">
+            <div v-for="(img, i) in commentImages" :key="img.key" class="relative size-16 rounded overflow-hidden border border-line bg-hover">
+              <img v-if="img.url" :src="img.url" :alt="img.name" class="size-full object-cover cursor-zoom-in" @click="viewer = { images: readyCommentImages, index: readyCommentImages.indexOf(img) }" />
+              <div v-else class="size-full flex items-center justify-center text-[11px] text-ink-3">上傳中…</div>
+              <button class="absolute top-0.5 right-0.5 size-5 rounded-full bg-black/60 text-white flex items-center justify-center cursor-pointer" title="移除" @click="commentImages.splice(i, 1)">
+                <Icon name="x" :size="12" />
+              </button>
+            </div>
+          </div>
           <div class="flex justify-end px-2 pb-2">
-            <button class="btn btn-primary !h-7" :disabled="!newComment.trim()" @click="addComment"><Icon name="send" :size="14" />傳送</button>
+            <button class="btn btn-primary !h-7" :disabled="(!newComment.trim() && !readyCommentImages.length) || commentImages.some((x) => !x.url)" @click="addComment"><Icon name="send" :size="14" />傳送</button>
           </div>
         </div>
         <div class="mt-3 space-y-3">
@@ -210,12 +228,26 @@
                 <span class="text-ink-4">{{ fmtDateTime(c.createdAt) }}</span>
                 <button v-if="c.userId === auth.user?.id || auth.isAdmin" class="ml-auto text-ink-4 hover:text-[#c50f1f] opacity-0 group-hover/cm:opacity-100 cursor-pointer" @click="removeComment(c)">刪除</button>
               </div>
-              <p class="text-sm text-ink-2 whitespace-pre-line break-words mt-0.5">{{ c.content }}</p>
+              <template v-for="(part, pi) in parseComment(c.content)" :key="pi">
+                <p v-if="part.text" class="text-sm text-ink-2 whitespace-pre-line break-words mt-0.5">{{ part.text }}</p>
+                <div v-else class="flex flex-wrap gap-2 mt-1.5">
+                  <button
+                    v-for="(img, ii) in part.images"
+                    :key="img.url"
+                    class="rounded overflow-hidden border border-line bg-hover cursor-zoom-in"
+                    title="點擊放大"
+                    @click="viewer = { images: part.images, index: ii }"
+                  >
+                    <img :src="img.url" :alt="img.name" class="block max-h-40 max-w-[240px] object-contain" loading="lazy" />
+                  </button>
+                </div>
+              </template>
             </div>
           </div>
         </div>
       </div>
     </div>
+    <ImageViewer :images="viewer?.images || []" :index="viewer?.index ?? null" @update:index="(i) => (viewer = i == null ? null : { ...viewer, index: i })" />
   </Modal>
 </template>
 
@@ -232,6 +264,7 @@ import LabelPicker from './LabelPicker.vue';
 import AssigneePicker from './AssigneePicker.vue';
 import ProgressIcon from './ProgressIcon.vue';
 import PriorityIcon from './PriorityIcon.vue';
+import ImageViewer from './ImageViewer.vue';
 import api from '@/api';
 import {
   PROGRESS, PRIORITIES, fmtDateTime, isLate, sortOrderAt, bySort,
@@ -256,6 +289,10 @@ const linkForm = ref(null);
 const uploading = ref(false);
 const titleEl = ref(null);
 const fileEl = ref(null);
+const commentEl = ref(null);
+const commentImages = ref([]); // 意見中貼上的圖片：{ key, url, name }（url 為空 = 上傳中）
+const readyCommentImages = computed(() => commentImages.value.filter((x) => x.url));
+const viewer = ref(null); // 放大檢視：{ images: [{ url, name }], index }
 const vFocus = { mounted: (el) => el.focus() };
 
 const done = computed(() => task.value?.progress === 100);
@@ -270,6 +307,8 @@ watch(() => ui.detail, async (d) => {
   linkForm.value = null;
   newItem.value = '';
   newComment.value = '';
+  commentImages.value = [];
+  viewer.value = null;
   if (!d) {
     task.value = null;
     return;
@@ -433,16 +472,23 @@ async function addLink() {
     ui.error(e);
   }
 }
-async function uploadFile(e) {
-  const file = e.target.files?.[0];
-  e.target.value = '';
-  if (!file) return;
-  const fd = new FormData();
-  fd.append('file', file);
+const isImage = (a) => a.type === 'file' && a.mimeType?.startsWith('image/');
+function viewAttachment(a) {
+  const images = task.value.attachments.filter(isImage).map((x) => ({ url: x.url, name: x.name }));
+  viewer.value = { images, index: images.findIndex((x) => x.url === a.url) };
+}
+
+async function uploadFiles(files) {
+  const taskId = task.value.id;
   uploading.value = true;
   try {
-    const att = await api.post(`/tasks/${task.value.id}/attachments`, fd);
-    task.value.attachments.push(att);
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append('file', file);
+      const att = await api.post(`/tasks/${taskId}/attachments`, fd);
+      if (task.value?.id !== taskId) return;
+      task.value.attachments.push(att);
+    }
     syncCard();
   } catch (err) {
     ui.error(err);
@@ -450,6 +496,78 @@ async function uploadFile(e) {
     uploading.value = false;
   }
 }
+function uploadFile(e) {
+  const files = [...(e.target.files || [])];
+  e.target.value = '';
+  if (files.length) uploadFiles(files);
+}
+
+// 剪貼簿中的圖片（截圖、從網頁或檔案總管複製的圖片）
+function pastedImages(e) {
+  const stamp = new Date().toLocaleString('sv-SE').replace(/[: ]/g, '-').slice(0, 16);
+  return [...(e.clipboardData?.items || [])]
+    .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
+    .map((it, i) => {
+      const file = it.getAsFile();
+      const ext = (it.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+      // 截圖沒有檔名（或叫 image.png），改成「貼上的圖片-時間」
+      const name = file.name && file.name !== 'image.png' ? file.name : `貼上的圖片-${stamp}${i ? `-${i + 1}` : ''}.${ext}`;
+      return new File([file], name, { type: file.type });
+    });
+}
+
+// 在工作視窗任何輸入框按 Ctrl+V：意見輸入框 → 圖片放進意見；其他地方 → 加入附件
+async function onPaste(e) {
+  const files = pastedImages(e);
+  if (!files.length) return; // 一般文字照常貼上
+  e.preventDefault();
+  if (e.target === commentEl.value) {
+    await uploadCommentImages(files);
+    return;
+  }
+  await uploadFiles(files);
+  ui.toast(files.length > 1 ? `已將 ${files.length} 張圖片加入附件` : '已將圖片加入附件', 'success');
+}
+
+async function uploadCommentImages(files) {
+  const taskId = task.value.id;
+  const room = MAX_COMMENT_IMAGES - commentImages.value.length;
+  if (files.length > room) ui.toast(`一則意見最多 ${MAX_COMMENT_IMAGES} 張圖片`, 'error');
+  for (const file of files.slice(0, Math.max(0, room))) {
+    const item = { key: `${Date.now()}-${Math.random()}`, url: '', name: file.name };
+    commentImages.value.push(item);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await api.post(`/tasks/${taskId}/images`, fd);
+      const target = commentImages.value.find((x) => x.key === item.key);
+      if (target) Object.assign(target, res);
+    } catch (err) {
+      commentImages.value = commentImages.value.filter((x) => x.key !== item.key);
+      ui.error(err);
+    }
+  }
+}
+
+// 意見內容：一般文字，夾雜一行一張的圖片 ![名稱](/uploads/檔名)
+const COMMENT_IMAGE_LINE = /^!\[([^\]\n]*)\]\((\/uploads\/[\w.-]+)\)$/;
+function parseComment(content) {
+  const parts = [];
+  for (const line of String(content || '').split('\n')) {
+    const m = line.match(COMMENT_IMAGE_LINE);
+    const last = parts[parts.length - 1];
+    if (m) {
+      if (last?.images) last.images.push({ name: m[1] || '圖片', url: m[2] });
+      else parts.push({ images: [{ name: m[1] || '圖片', url: m[2] }] });
+    } else if (last && 'text' in last) last.text += `\n${line}`;
+    else parts.push({ text: line });
+  }
+  return parts.map((p) => ('text' in p ? { text: p.text.trim() } : p)).filter((p) => p.images || p.text);
+}
+// 名稱只留 30 字，6 張圖加上 1500 字的文字仍在意見長度上限（2000）內
+const imageLine = (img) => `![${img.name.replace(/[[\]\n]/g, '').slice(0, 30)}](${img.url})`;
+const MAX_COMMENT_IMAGES = 6;
+
 async function removeAttachment(a) {
   const ok = await ui.confirm({ title: '移除附件', message: `確定要移除「${a.name}」嗎？`, okText: '移除' });
   if (!ok) return;
@@ -464,12 +582,14 @@ async function removeAttachment(a) {
 
 /* ---- 意見 ---- */
 async function addComment() {
-  const content = newComment.value.trim();
+  if (commentImages.value.some((x) => !x.url)) return; // 圖片還在上傳
+  const content = [newComment.value.trim(), ...readyCommentImages.value.map(imageLine)].filter(Boolean).join('\n');
   if (!content) return;
   try {
     const c = await api.post(`/tasks/${task.value.id}/comments`, { content });
     task.value.comments.unshift(c);
     newComment.value = '';
+    commentImages.value = [];
     syncCard();
   } catch (e) {
     ui.error(e);
