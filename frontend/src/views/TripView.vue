@@ -390,7 +390,9 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import {
+  computed, onBeforeUnmount, onMounted, reactive, ref, watch,
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import draggable from 'vuedraggable';
 import Icon from '@/components/Icon.vue';
@@ -407,7 +409,7 @@ import DayLanes from '@/components/trip/DayLanes.vue';
 import BackupPickerDialog from '@/components/trip/BackupPickerDialog.vue';
 import AutoScheduleDialog from '@/components/trip/AutoScheduleDialog.vue';
 import OptimizeOrderDialog from '@/components/trip/OptimizeOrderDialog.vue';
-import api from '@/api';
+import api, { writes } from '@/api';
 import { sortOrderAt } from '@/utils/planner';
 import {
   tripDays, fmtTripRange, stopCategory, setCustomCategories, distanceKm, fmtDistance, fmtCost, byStopOrder,
@@ -536,17 +538,63 @@ const memberCandidates = computed(() => {
   return plans.users.filter((u) => !ids.has(u.id) && (u.displayName.toLowerCase().includes(kw) || u.username.toLowerCase().includes(kw)));
 });
 
+function applyTripData(data) {
+  trip.value = data.trip;
+  members.value = data.members;
+  stops.value = data.stops;
+  setCustomCategories(data.categories || []);
+}
+
 async function load() {
   try {
-    const data = await api.get(`/trips/${tripId}`);
-    trip.value = data.trip;
-    members.value = data.members;
-    stops.value = data.stops;
-    setCustomCategories(data.categories || []);
+    applyTripData(await api.get(`/trips/${tripId}`));
+    version = null;
   } catch (e) {
     error.value = e.message;
   }
 }
+
+/* ---- 自動同步：其他成員的變更不用重新整理就會出現 ----
+ * 每 10 秒查一次版本碼（只有幾個彙總數字），變了才重新載入完整資料；分頁在背景時暫停，切回來立刻檢查。
+ * 自己正在儲存時先不套用，避免畫面閃回舊資料。
+ */
+const SYNC_MS = 10000;
+let version = null;
+let syncTimer = null;
+let syncing = false;
+async function syncNow() {
+  if (syncing || document.hidden || !trip.value || error.value) return;
+  syncing = true;
+  try {
+    const { v } = await api.get(`/trips/${tripId}/version`);
+    if (version === null) {
+      version = v;
+      return;
+    }
+    if (v === version || writes.pending) return;
+    const data = await api.get(`/trips/${tripId}`);
+    if (writes.pending) return; // 等自己的儲存完成後下次再同步
+    applyTripData(data);
+    // 距離自己上次修改超過 15 秒，才可能是其他成員的變更
+    if (Date.now() - writes.lastAt > 15000) ui.toast('行程已更新（其他成員的變更）', 'info');
+    version = v;
+  } catch (e) {
+    if (e.status === 404 || e.status === 403) error.value = e.message; // 行程被刪除或被移出
+  } finally {
+    syncing = false;
+  }
+}
+const onVisible = () => { if (!document.hidden) syncNow(); };
+onMounted(() => {
+  syncTimer = setInterval(syncNow, SYNC_MS);
+  document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('focus', onVisible);
+});
+onBeforeUnmount(() => {
+  clearInterval(syncTimer);
+  document.removeEventListener('visibilitychange', onVisible);
+  window.removeEventListener('focus', onVisible);
+});
 
 const upsertStop = (s) => {
   const i = stops.value.findIndex((x) => x.id === s.id);

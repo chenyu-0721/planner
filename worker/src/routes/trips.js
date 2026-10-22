@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import {
-  and, eq, asc, inArray, count, or, lt, gt, isNull, isNotNull, max,
+  and, eq, asc, inArray, count, or, lt, gt, isNull, isNotNull, max, sum,
 } from 'drizzle-orm';
 import {
   trips, tripMembers, tripStops, users, stopCategories,
@@ -214,6 +214,29 @@ router.get('/:id', async (c) => {
     stops: r.stops.map(stopJson),
     categories: r.categories.map(categoryJson),
   });
+});
+
+// 行程的版本碼：前端定時查詢，有變動（其他成員新增 / 修改 / 刪除）才重新載入完整資料
+// 只回傳幾個彙總數字，D1 讀取量很小
+router.get('/:id/version', async (c) => {
+  const tripId = toId(c.req.param('id'));
+  const db = getDb(c);
+  const user = c.get('user');
+  const r = await runBatch(db, {
+    access: tripAccessQuery(db, tripId, user.id),
+    stops: db.select({ n: count(), ids: sum(tripStops.id), at: max(tripStops.updatedAt) }).from(tripStops).where(eq(tripStops.tripId, tripId)),
+    members: db.select({ n: count(), ids: sum(tripMembers.userId) }).from(tripMembers).where(eq(tripMembers.tripId, tripId)),
+    categories: db.select({ n: count(), at: max(stopCategories.updatedAt) }).from(stopCategories),
+    users: db.select({ at: max(users.updatedAt) }).from(tripMembers).innerJoin(users, eq(users.id, tripMembers.userId))
+      .where(eq(tripMembers.tripId, tripId)),
+  });
+  const [access] = r.access;
+  const trip = checkTripAccess(user, access);
+  const [st] = r.stops;
+  const [mb] = r.members;
+  const [ct] = r.categories;
+  const [us] = r.users;
+  return c.json({ v: [trip.updatedAt, st.n, st.ids, st.at, mb.n, mb.ids, ct.n, ct.at, us.at].join('|') });
 });
 
 router.put('/:id', async (c) => {
