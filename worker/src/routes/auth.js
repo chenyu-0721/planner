@@ -32,7 +32,10 @@ router.put('/me', requireAuth, async (c) => {
   const patch = {};
   if (body.displayName !== undefined) patch.displayName = requireText(body.displayName, LIMITS.displayName, '顯示名稱');
   if (body.email !== undefined) patch.email = optionalText(body.email, LIMITS.email, '電子郵件') || null;
-  if (body.color !== undefined) patch.color = /^#[0-9a-fA-F]{6}$/.test(body.color) ? body.color : '#0078d4';
+  if (body.color !== undefined) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(body.color)) throw new HttpError(400, '顏色格式不正確');
+    patch.color = body.color.toLowerCase();
+  }
   const db = getDb(c);
   const user = Object.keys(patch).length
     ? await db.update(users).set(patch).where(eq(users.id, c.get('user').id)).returning().get()

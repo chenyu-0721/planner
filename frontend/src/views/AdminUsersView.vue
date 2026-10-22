@@ -72,6 +72,13 @@
           <label class="field-label">電子郵件（選用）</label>
           <input v-model="form.email" maxlength="100" class="input" />
         </div>
+        <div>
+          <label class="field-label">頭像顏色</label>
+          <div class="flex items-center gap-3">
+            <Avatar :user="{ displayName: form.displayName || '?', color: form.color }" :size="36" />
+            <ColorPicker v-model="form.color" />
+          </div>
+        </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="field-label">{{ form.id ? '新密碼（留白不變更）' : '密碼' }}</label>
@@ -136,6 +143,7 @@ import { computed, reactive, ref } from 'vue';
 import Icon from '@/components/Icon.vue';
 import Avatar from '@/components/Avatar.vue';
 import Modal from '@/components/Modal.vue';
+import ColorPicker from '@/components/ColorPicker.vue';
 import api from '@/api';
 import { fmtDateTime } from '@/utils/planner';
 import { useAuthStore } from '@/stores/auth';
@@ -178,6 +186,7 @@ function openForm(u) {
     username: u?.username || '',
     displayName: u?.displayName || '',
     email: u?.email || '',
+    color: u?.color || '',
     role: u?.role || 'member',
     isActive: u ? u.isActive : true,
     password: '',

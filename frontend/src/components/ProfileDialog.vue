@@ -10,8 +10,9 @@
       <div v-if="tab === 'profile'" class="space-y-3">
         <div class="flex items-center gap-3">
           <Avatar :user="{ displayName, color }" :size="56" />
-          <div class="flex flex-wrap gap-1.5">
-            <button v-for="c in COLORS" :key="c" class="size-6 rounded-full cursor-pointer ring-offset-1" :class="c === color ? 'ring-2 ring-accent' : ''" :style="{ background: c }" @click="color = c"></button>
+          <div class="min-w-0">
+            <div class="text-xs text-ink-3 mb-1.5">頭像顏色（最後一個可以自訂任何顏色）</div>
+            <ColorPicker v-model="color" />
           </div>
         </div>
         <div>
@@ -54,6 +55,7 @@
 import { reactive, ref, watch } from 'vue';
 import Modal from './Modal.vue';
 import Avatar from './Avatar.vue';
+import ColorPicker from './ColorPicker.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { usePlansStore } from '@/stores/plans';
@@ -64,7 +66,6 @@ const auth = useAuthStore();
 const ui = useUiStore();
 const plans = usePlansStore();
 
-const COLORS = ['#0078d4', '#8764b8', '#038387', '#ca5010', '#c239b3', '#498205', '#d13438', '#004e8c', '#986f0b', '#5c2e91'];
 const tabs = [{ key: 'profile', label: '個人資料' }, { key: 'password', label: '變更密碼' }];
 const tab = ref('profile');
 const displayName = ref('');
@@ -78,7 +79,7 @@ watch(() => props.modelValue, (v) => {
   tab.value = 'profile';
   displayName.value = auth.user?.displayName || '';
   email.value = auth.user?.email || '';
-  color.value = auth.user?.color || COLORS[0];
+  color.value = auth.user?.color || '#0078d4';
   Object.assign(pw, { current: '', next: '', confirm: '' });
 });
 

@@ -14,6 +14,7 @@ const router = new Hono();
 router.use('*', requireAuth);
 
 const COLORS = ['#0078d4', '#8764b8', '#038387', '#ca5010', '#c239b3', '#498205', '#d13438', '#004e8c', '#986f0b', '#5c2e91'];
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
 // 所有啟用中的使用者（用於指派、加入成員）
 router.get('/', async (c) => {
@@ -50,7 +51,7 @@ router.post('/', requireAdmin, async (c) => {
     displayName,
     email,
     role: body.role === 'admin' ? 'admin' : 'member',
-    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    color: HEX_COLOR.test(body.color || '') ? body.color.toLowerCase() : COLORS[Math.floor(Math.random() * COLORS.length)],
   }).returning().get();
   return c.json(safeUser(user), 201);
 });
@@ -67,6 +68,10 @@ router.put('/:id', requireAdmin, async (c) => {
   if (body.email !== undefined) patch.email = optionalText(body.email, LIMITS.email, '電子郵件') || null;
   if (body.role !== undefined && !self) patch.role = body.role === 'admin' ? 'admin' : 'member';
   if (body.isActive !== undefined && !self) patch.isActive = !!body.isActive;
+  if (body.color !== undefined && body.color !== '') {
+    if (!HEX_COLOR.test(body.color)) throw new HttpError(400, '顏色格式不正確');
+    patch.color = body.color.toLowerCase();
+  }
   if (body.password) patch.passwordHash = await hashPassword(c, checkPassword(body.password));
   const updated = Object.keys(patch).length
     ? await db.update(users).set(patch).where(eq(users.id, id)).returning().get()
