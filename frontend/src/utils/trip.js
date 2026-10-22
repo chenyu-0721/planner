@@ -613,7 +613,13 @@ export function fmtDuration(sec) {
 /* ---------- Google 地圖連結（免費，不需要 API 金鑰） ---------- */
 
 const ll = (p) => `${p.lat},${p.lng}`;
-export const googlePlaceUrl = (stop) => `https://www.google.com/maps/search/?api=1&query=${ll(stop)}`;
+// 只用座標時 Google 地圖只會放一個圖釘，不會選到店家；改成「在這個座標附近搜尋地點名稱」，就會直接開到那間店
+const GENERIC_TITLES = /^(座標位置|新地點|地點|未命名)$/;
+export function googlePlaceUrl(stop) {
+  const name = String(stop.title || '').trim();
+  if (!name || GENERIC_TITLES.test(name)) return `https://www.google.com/maps/search/?api=1&query=${ll(stop)}`;
+  return `https://www.google.com/maps/search/${encodeURIComponent(name)}/@${ll(stop)},17z`;
+}
 
 // 單一路段（高鐵 / 火車 / 捷運會用大眾運輸，可查實際班次）
 export function googleSegmentUrl(from, to, mode) {
