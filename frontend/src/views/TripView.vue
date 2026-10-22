@@ -656,13 +656,15 @@ async function computeRoutes() {
         if (route) {
           next[d.date] = { ...route, ids: dayStops.map((s) => s.id).join(',') };
           pendingRail.push({ date: d.date, stops: dayStops });
+          // 每天算好就先顯示（機車路線需要排隊查詢，不用等全部完成）
+          if (seq === routeSeq) routes.value = { ...routes.value, [d.date]: next[d.date] };
         }
       } catch {
         // 路線服務失敗時以直線顯示
       }
     }));
     if (seq !== routeSeq) return;
-    routes.value = next;
+    routes.value = next; // 拿掉已經不需要路線的日子
     for (const item of pendingRail) {
       upgradeRailLegs(item.stops, mode, (index, leg) => {
         if (seq !== routeSeq) return;
