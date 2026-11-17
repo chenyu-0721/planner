@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-white rounded-md card-shadow-hover p-3 space-y-2" @keydown.esc="$emit('close')">
+  <div class="bg-white rounded-md card-shadow-hover p-3 space-y-2 min-w-0 overflow-hidden" @keydown.esc="$emit('close')">
     <input
       ref="titleEl"
       v-model="title"
@@ -8,20 +8,17 @@
       maxlength="200"
       @keydown.enter.prevent="submit"
     />
-    <div class="relative">
-      <Icon name="calendar" :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" />
-      <input v-model="dueDate" type="date" class="input !pl-8 text-ink-2" title="設定到期日" />
-    </div>
+    <DateInput v-model="dueDate" icon placeholder="到期日" display-class="text-ink-2" />
     <Popover block>
       <template #trigger>
-        <button class="w-full flex items-center gap-2 h-8 px-2 rounded border border-line-2 hover:border-ink-4 text-sm text-ink-2 cursor-pointer">
+        <button class="w-full min-w-0 flex items-center gap-2 h-8 px-2 rounded border border-line-2 hover:border-ink-4 text-sm text-ink-2 cursor-pointer overflow-hidden">
           <template v-if="assigneeIds.length">
-            <div class="flex -space-x-1.5">
-              <Avatar v-for="u in assigneeUsers" :key="u.id" :user="u" :size="22" ring />
+            <div class="flex -space-x-1.5 shrink-0">
+              <Avatar v-for="u in assigneeUsers.slice(0, 3)" :key="u.id" :user="u" :size="20" ring />
             </div>
-            <span class="truncate">{{ assigneeUsers.map((u) => u.displayName).join('、') }}</span>
+            <span class="min-w-0 flex-1 truncate text-left">{{ assigneeUsers.map((u) => u.displayName).join('、') }}</span>
           </template>
-          <template v-else><Icon name="user-plus" :size="15" class="text-ink-3" />指派</template>
+          <template v-else><Icon name="user-plus" :size="15" class="shrink-0 text-ink-3" />指派</template>
         </button>
       </template>
       <AssigneePicker v-model="assigneeIds" :members="planStore.members" />
@@ -34,6 +31,7 @@
 import { computed, onMounted, ref } from 'vue';
 import Icon from '../Icon.vue';
 import Avatar from '../Avatar.vue';
+import DateInput from '../DateInput.vue';
 import Popover from '../Popover.vue';
 import AssigneePicker from '../AssigneePicker.vue';
 import { usePlanStore } from '@/stores/plan';

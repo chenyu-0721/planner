@@ -17,7 +17,7 @@
         @change="onBucketMove"
       >
         <template #item="{ element: col }">
-          <section class="w-[85vw] max-w-[284px] sm:w-[284px] h-full flex flex-col shrink-0 snap-start scroll-ml-3">
+          <section class="w-[min(92vw,320px)] sm:w-[284px] sm:max-w-none h-full flex flex-col shrink-0 snap-start scroll-ml-3">
             <!-- 欄位標題 -->
             <header class="bucket-handle flex items-center gap-2 h-10 px-1 shrink-0" :class="groupBy === 'bucket' ? 'cursor-grab active:cursor-grabbing' : ''">
               <template v-if="col.kind === 'progress'"><ProgressIcon :value="col.ref" :size="16" /></template>

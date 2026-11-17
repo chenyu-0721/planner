@@ -1,5 +1,5 @@
 <template>
-  <span ref="triggerEl" class="inline-flex" :class="block ? 'w-full' : ''" @click.stop="toggle">
+  <span ref="triggerEl" class="inline-flex min-w-0" :class="block ? 'w-full' : ''" @click.stop="toggle">
     <slot name="trigger" :open="open" />
   </span>
   <Teleport to="body">

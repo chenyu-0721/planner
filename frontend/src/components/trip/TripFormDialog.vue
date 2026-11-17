@@ -9,13 +9,13 @@
         </div>
       </div>
       <div class="grid grid-cols-2 gap-3">
-        <div>
+        <div class="min-w-0">
           <label class="field-label">開始日期</label>
-          <input v-model="form.startDate" type="date" class="input" />
+          <DateInput v-model="form.startDate" placeholder="開始日期" />
         </div>
-        <div>
+        <div class="min-w-0">
           <label class="field-label">結束日期</label>
-          <input v-model="form.endDate" type="date" class="input" :min="form.startDate || undefined" />
+          <DateInput v-model="form.endDate" placeholder="結束日期" :min="form.startDate" />
         </div>
       </div>
       <p v-if="trip && shrinking" class="text-xs text-[#986f0b] bg-[#fff8e5] rounded px-2.5 py-1.5">
@@ -56,6 +56,7 @@ import {
 import Modal from '../Modal.vue';
 import Icon from '../Icon.vue';
 import TripIcon from './TripIcon.vue';
+import DateInput from '../DateInput.vue';
 import api from '@/api';
 import { PLAN_COLORS, addDays, diffDays, todayStr } from '@/utils/planner';
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="w-64">
+  <div class="w-[min(16rem,calc(100vw-2rem))]">
     <div class="px-2 pt-1 pb-1.5">
       <input ref="searchEl" v-model="keyword" class="input" placeholder="輸入名稱搜尋" @click.stop />
     </div>

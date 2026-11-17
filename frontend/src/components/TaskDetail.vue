@@ -101,14 +101,24 @@
             </select>
           </div>
         </div>
-        <div>
+        <div class="min-w-0">
           <label class="field-label">開始日期</label>
-          <input type="date" class="input" :value="task.startDate || ''" :max="task.dueDate || undefined" @change="save({ startDate: $event.target.value || null })" />
+          <DateInput
+            :model-value="task.startDate || ''"
+            :max="task.dueDate || ''"
+            placeholder="開始日期"
+            @update:model-value="(v) => save({ startDate: v || null })"
+          />
         </div>
-        <div>
+        <div class="min-w-0">
           <label class="field-label">到期日</label>
-          <input type="date" class="input" :class="late ? '!text-[#c50f1f] !border-[#c50f1f]' : ''" :value="task.dueDate || ''" :min="task.startDate || undefined"
-                 @change="save({ dueDate: $event.target.value || null })" />
+          <DateInput
+            :model-value="task.dueDate || ''"
+            :min="task.startDate || ''"
+            placeholder="到期日"
+            :display-class="late ? '!text-[#c50f1f] !border-[#c50f1f]' : ''"
+            @update:model-value="(v) => save({ dueDate: v || null })"
+          />
         </div>
       </div>
 
@@ -235,6 +245,7 @@ import PlanIcon from './PlanIcon.vue';
 import LabelPill from './LabelPill.vue';
 import LabelPicker from './LabelPicker.vue';
 import AssigneePicker from './AssigneePicker.vue';
+import DateInput from './DateInput.vue';
 import ProgressIcon from './ProgressIcon.vue';
 import PriorityIcon from './PriorityIcon.vue';
 import api from '@/api';
