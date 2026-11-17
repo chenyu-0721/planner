@@ -14,6 +14,7 @@ const routes = [
       { path: 'plans/:id/:view(board|grid|schedule|charts)?', name: 'plan', component: () => import('@/views/PlanView.vue') },
       { path: 'trips', name: 'trips', component: () => import('@/views/TripsView.vue') },
       { path: 'trips/:id', name: 'trip', component: () => import('@/views/TripView.vue') },
+      { path: 'weather', name: 'weather', component: () => import('@/views/WeatherView.vue') },
       { path: 'admin/users', name: 'admin-users', component: () => import('@/views/AdminUsersView.vue'), meta: { admin: true } },
     ],
   },

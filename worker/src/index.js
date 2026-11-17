@@ -10,6 +10,7 @@ import meRoutes from './routes/me.js';
 import tripRoutes from './routes/trips.js';
 import placeRoutes from './routes/places.js';
 import stopCategoryRoutes from './routes/stopCategories.js';
+import weatherRoutes from './routes/weather.js';
 
 // 前端靜態檔由 Workers Static Assets 提供（wrangler.jsonc 的 assets），
 // 只有 /api/* 與 /uploads/* 會進到這個 Worker
@@ -24,6 +25,7 @@ app.route('/api/me', meRoutes);
 app.route('/api/trips', tripRoutes);
 app.route('/api/places', placeRoutes);
 app.route('/api/stop-categories', stopCategoryRoutes);
+app.route('/api/weather', weatherRoutes);
 
 // 前端需要知道的功能開關（不回傳金鑰）
 app.get('/api/config', (c) => c.json({ fileUpload: fileUploadEnabled(c) }));

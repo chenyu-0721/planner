@@ -32,6 +32,7 @@
       <NavItem to="/mytasks" icon="circle-check" label="我的工作" :collapsed="collapsed" />
       <NavItem to="/plans" icon="plans" label="我的計劃" :collapsed="collapsed" exact />
       <NavItem to="/trips" icon="plane" label="我的行程" :collapsed="collapsed" />
+      <NavItem to="/weather" icon="cloud" label="我的天氣" :collapsed="collapsed" />
 
       <template v-if="!collapsed">
         <div class="border-t border-line my-3 mx-1"></div>
