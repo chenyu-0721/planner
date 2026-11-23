@@ -35,6 +35,8 @@
 // 同時開啟的對話框（確認框疊在編輯框上）。後開的在最上層，Esc 只關最上面那個。
 const modalStack = [];
 let modalSeq = 0;
+// 側邊面板用：有對話框開著時，Esc 交給對話框處理
+export const anyModalOpen = () => modalStack.length > 0;
 </script>
 
 <script setup>

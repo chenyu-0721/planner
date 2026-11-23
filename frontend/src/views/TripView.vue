@@ -1490,14 +1490,3 @@ async function removeTrip() {
 load();
 </script>
 
-<style scoped>
-.sheet-up-enter-active,
-.sheet-up-leave-active {
-  transition: transform 0.2s ease-out, opacity 0.2s;
-}
-.sheet-up-enter-from,
-.sheet-up-leave-to {
-  transform: translateY(24px);
-  opacity: 0;
-}
-</style>

@@ -1,5 +1,5 @@
 <template>
-  <Modal :model-value="!!ui.detail" width="700px" @update:model-value="close">
+  <SidePanel :model-value="!!ui.detail" width="620px" @update:model-value="close">
     <template v-if="task" #header>
       <div class="flex items-center gap-2 text-sm text-ink-3 min-w-0">
         <PlanIcon :plan="headerPlan" :size="20" />
@@ -231,13 +231,13 @@
         </div>
       </div>
     </div>
-  </Modal>
+  </SidePanel>
 </template>
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
-import Modal from './Modal.vue';
+import SidePanel from './SidePanel.vue';
 import Icon from './Icon.vue';
 import Avatar from './Avatar.vue';
 import Popover from './Popover.vue';

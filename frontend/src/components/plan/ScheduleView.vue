@@ -1,5 +1,54 @@
 <template>
-  <div class="flex-1 min-h-0 flex relative">
+  <!-- 手機版：小月曆（日期＋圓點），點某天在下方列出當天的工作 -->
+  <div v-if="ui.isMobile" class="flex-1 min-h-0 overflow-y-auto thin-scroll">
+    <div class="bg-white border-b border-line px-2 pt-2 pb-1">
+      <div class="flex items-center gap-1 px-1 mb-1">
+        <button class="icon-btn" title="上個月" @click="move(-1)"><Icon name="chevron-left" :size="18" /></button>
+        <h2 class="flex-1 text-center text-[15px] font-semibold">{{ heading }}</h2>
+        <button class="icon-btn" title="下個月" @click="move(1)"><Icon name="chevron-right" :size="18" /></button>
+        <button class="btn btn-default !h-7 !px-2.5 text-xs" @click="goToday(); selected = today">今天</button>
+      </div>
+      <div class="grid grid-cols-7 text-center text-[11px] text-ink-4 font-semibold">
+        <div v-for="w in WEEKDAYS" :key="w" class="h-6 leading-6">{{ w }}</div>
+      </div>
+      <div v-for="week in weeks" :key="week.start" class="grid grid-cols-7">
+        <button
+          v-for="d in week.days"
+          :key="d"
+          class="h-12 flex flex-col items-center justify-start pt-1 cursor-pointer rounded-lg"
+          :class="selected === d ? 'bg-accent-light' : ''"
+          @click="selected = d"
+        >
+          <span
+            class="size-7 inline-flex items-center justify-center rounded-full text-[13px]"
+            :class="d === today ? 'bg-accent text-white font-semibold' : inMonth(d) ? 'text-ink' : 'text-ink-4'"
+          >{{ parseDate(d).getDate() }}</span>
+          <span class="flex gap-0.5 mt-0.5 h-1.5">
+            <span v-for="(c, i) in dotsOn(d)" :key="i" class="size-1.5 rounded-full" :style="{ background: c }"></span>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <div class="px-3 pt-3 pb-24">
+      <div class="flex items-center gap-2 mb-2">
+        <button class="chip !h-7" :class="!showUnscheduled ? 'chip-on' : ''" @click="showUnscheduled = false">{{ fmtLong(selected) }}<span class="text-[11px] opacity-70">{{ dayTasks.length }}</span></button>
+        <button class="chip !h-7" :class="showUnscheduled ? 'chip-on' : ''" @click="showUnscheduled = true">未排程<span class="text-[11px] opacity-70">{{ unscheduled.length }}</span></button>
+      </div>
+      <form v-if="!showUnscheduled" class="flex gap-1.5 mb-2" @submit.prevent="addOnDay">
+        <input v-model="dayTitle" class="input flex-1 min-w-0" maxlength="200" :placeholder="`新增工作，到期日 ${fmtShort(selected)}`" enterkeyhint="done" />
+        <button class="btn btn-primary !px-3 shrink-0" :disabled="!dayTitle.trim()">新增</button>
+      </form>
+      <div class="space-y-2">
+        <TaskCard v-for="t in showUnscheduled ? unscheduled : dayTasks" :key="t.id" :task="t" />
+      </div>
+      <p v-if="showUnscheduled && !unscheduled.length" class="py-8 text-center text-xs text-ink-4">所有工作都已排程</p>
+      <p v-else-if="!showUnscheduled && !dayTasks.length" class="py-8 text-center text-xs text-ink-4">這天沒有工作</p>
+      <p v-if="showUnscheduled && unscheduled.length" class="mt-3 text-xs text-ink-4 text-center">點工作設定到期日，就會出現在月曆上。</p>
+    </div>
+  </div>
+
+  <div v-else class="flex-1 min-h-0 flex relative">
     <div class="flex-1 min-w-0 flex flex-col px-3 sm:px-6 py-3 sm:py-4">
       <!-- 工具列 -->
       <div class="flex flex-wrap items-center gap-x-2 gap-y-2 mb-3 shrink-0">
@@ -111,7 +160,7 @@ import Popover from '../Popover.vue';
 import TaskCard from '../TaskCard.vue';
 import ProgressIcon from '../ProgressIcon.vue';
 import {
-  toDateStr, parseDate, todayStr, addDays, diffDays, fmtLong, isLate,
+  toDateStr, parseDate, todayStr, addDays, diffDays, fmtLong, fmtShort, isLate,
 } from '@/utils/planner';
 import { usePlanStore } from '@/stores/plan';
 import { useUiStore } from '@/stores/ui';
@@ -126,7 +175,7 @@ const mode = ref('month');
 const cursor = ref(todayStr());
 const today = todayStr();
 // 寬螢幕預設顯示「未排程的工作」，手機 / 平板預設收起
-const showUnscheduled = ref(window.matchMedia('(min-width: 1024px)').matches);
+const showUnscheduled = ref(!ui.isMobile && window.matchMedia('(min-width: 1024px)').matches);
 const dropDay = ref(null);
 let dragTask = null;
 const vFocus = { mounted: (el) => el.focus() };
@@ -207,6 +256,29 @@ const statusColor = (t) => {
   if (t.progress === 50) return '#0f6cbd';
   return '#8a8886';
 };
+
+/* ---- 手機版 ---- */
+const selected = ref(today);
+const dayTitle = ref('');
+// 某天有哪些工作（含跨日工作的中間幾天）
+const tasksOn = (d) => scheduled.value.filter((t) => {
+  const [a, b] = range(t);
+  return a <= d && d <= b;
+});
+const dayTasks = computed(() => tasksOn(selected.value)
+  .sort((a, b) => (a.progress === 100) - (b.progress === 100) || a.priority - b.priority));
+// 月曆上的小圓點（最多 3 個，顏色代表狀態）
+const dotsOn = (d) => tasksOn(d).slice(0, 3).map(statusColor);
+async function addOnDay() {
+  const title = dayTitle.value.trim();
+  if (!title) return;
+  dayTitle.value = '';
+  try {
+    await planStore.createTask({ title, dueDate: selected.value });
+  } catch (err) {
+    ui.error(err);
+  }
+}
 
 function goToday() {
   cursor.value = todayStr();

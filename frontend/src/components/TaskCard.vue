@@ -1,7 +1,7 @@
 <template>
   <div
     class="group relative bg-white rounded-md card-shadow hover:card-shadow-hover cursor-pointer select-none transition-shadow"
-    :class="done ? 'opacity-90' : ''"
+    :class="[done ? 'opacity-90' : '', ui.detail?.taskId === task.id ? 'ring-2 ring-accent' : '']"
     @click="ui.openTask(task)"
   >
     <!-- 圖片預覽 -->

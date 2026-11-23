@@ -173,6 +173,17 @@ input[type="date"]::-webkit-datetime-edit-fields-wrapper {
   opacity: 0;
 }
 
+/* 從底部滑上來（手機抽屜、卡片） */
+.sheet-up-enter-active,
+.sheet-up-leave-active {
+  transition: transform 0.2s ease-out, opacity 0.2s;
+}
+.sheet-up-enter-from,
+.sheet-up-leave-to {
+  transform: translateY(24px);
+  opacity: 0;
+}
+
 .drag-fallback {
   opacity: 1 !important;
   transform: rotate(3deg);

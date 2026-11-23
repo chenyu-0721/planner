@@ -42,7 +42,24 @@
           </Popover>
         </div>
 
+        <!-- 進度摘要（電腦版） -->
+        <div v-if="stats.total" class="hidden lg:flex items-center gap-2.5 ml-2 text-xs text-ink-3 shrink-0">
+          <div class="w-24 h-1.5 rounded-full bg-[#edebe9] overflow-hidden" :title="`已完成 ${stats.done}/${stats.total}`">
+            <div class="h-full bg-done transition-all" :style="{ width: `${stats.pct}%` }"></div>
+          </div>
+          <span>完成 {{ stats.pct }}%</span>
+          <span v-if="stats.late" class="text-[#c50f1f] font-semibold">{{ stats.late }} 個逾期</span>
+        </div>
+
         <div class="flex-1"></div>
+
+        <!-- 計劃內搜尋 -->
+        <div v-if="!ui.isMobile" class="relative w-44 lg:w-56">
+          <Icon name="search" :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" />
+          <input v-model="filters.keyword" class="input !h-8 !pl-8 !pr-7" placeholder="搜尋工作" />
+          <button v-if="filters.keyword" class="absolute right-1 top-1/2 -translate-y-1/2 icon-btn !size-6" title="清除" @click="filters.keyword = ''"><Icon name="x" :size="12" /></button>
+        </div>
+        <button v-else class="icon-btn" :class="searchOpen || filters.keyword ? 'text-accent' : ''" title="搜尋工作" @click="toggleSearch"><Icon name="search" :size="18" /></button>
 
         <Popover placement="bottom-end">
           <template #trigger>
@@ -71,7 +88,7 @@
 
         <div class="flex-1"></div>
 
-        <div class="shrink-0 flex items-center gap-1 pb-1">
+        <div v-if="!ui.isMobile" class="shrink-0 flex items-center gap-1 pb-1">
           <Popover placement="bottom-end">
             <template #trigger>
               <button class="btn btn-ghost" :class="filterCount ? '!text-accent !font-semibold' : ''">
@@ -92,20 +109,77 @@
           </Popover>
         </div>
       </div>
+      <!-- 手機版搜尋列 -->
+      <div v-if="ui.isMobile && (searchOpen || filters.keyword)" class="px-3 pb-2">
+        <div class="relative">
+          <Icon name="search" :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" />
+          <input ref="searchEl" v-model="filters.keyword" class="input !pl-8 !pr-8" placeholder="搜尋工作名稱" enterkeyhint="search" />
+          <button class="absolute right-1 top-1/2 -translate-y-1/2 icon-btn !size-7" title="關閉搜尋" @click="closeSearch"><Icon name="x" :size="14" /></button>
+        </div>
+      </div>
+
+      <!-- 快速篩選 -->
+      <div v-if="view !== 'charts' || ui.isMobile" class="flex items-center gap-1.5 px-3 sm:px-6 pb-2 overflow-x-auto no-scrollbar">
+        <!-- 手機版：篩選與群組放在這一列 -->
+        <div v-if="ui.isMobile" class="shrink-0 flex items-center gap-1.5">
+          <Popover placement="bottom-start">
+            <template #trigger>
+              <button class="chip shrink-0 !h-7" :class="filterCount ? 'chip-on' : ''"><Icon name="filter" :size="13" />篩選<template v-if="filterCount"> {{ filterCount }}</template></button>
+            </template>
+            <FilterPanel v-model="filters" :members="planStore.members" :buckets="planStore.sortedBuckets" :label-names="plan.labelNames" />
+          </Popover>
+          <Popover v-if="view === 'board'" placement="bottom-start" close-on-click>
+            <template #trigger>
+              <button class="chip shrink-0 !h-7"><Icon name="group" :size="13" />{{ groupLabel }}<Icon name="chevron-down" :size="12" /></button>
+            </template>
+            <div class="px-3 pt-1 pb-0.5 text-[11px] text-ink-4">群組依據</div>
+            <button v-for="g in GROUP_OPTIONS" :key="g.key" class="menu-item" @click="groupBy = g.key">
+              <span class="w-4"><Icon v-if="groupBy === g.key" name="check" :size="15" class="text-accent" /></span>{{ g.label }}
+            </button>
+          </Popover>
+          <span v-if="view !== 'charts'" class="shrink-0 w-px h-5 bg-line-2 mx-0.5"></span>
+        </div>
+        <template v-if="view !== 'charts'">
+        <button
+          v-for="q in quickFilters"
+          :key="q.key"
+          class="chip shrink-0 !h-7"
+          :class="isQuickOn(q) ? 'chip-on' : ''"
+          @click="toggleQuick(q)"
+        >
+          <Icon v-if="q.icon" :name="q.icon" :size="13" />{{ q.label }}
+          <span v-if="q.count != null" class="text-[11px]" :class="q.danger && q.count && !isQuickOn(q) ? 'text-[#c50f1f] font-semibold' : 'opacity-70'">{{ q.count }}</span>
+        </button>
+        <span v-if="filterCount" class="shrink-0 text-xs text-ink-3 pl-1">顯示 {{ filteredTasks.length }} / {{ planStore.tasks.length }} 個工作</span>
+        </template>
+      </div>
     </div>
 
     <!-- 內容 -->
-    <BoardView v-if="view === 'board'" :tasks="filteredTasks" :group-by="groupBy" />
-    <GridView v-else-if="view === 'grid'" :tasks="filteredTasks" />
+    <BoardView v-if="view === 'board'" :tasks="filteredTasks" :group-by="groupBy" :style="panelPad" @active-bucket="activeBucket = $event" />
+    <ListView v-else-if="view === 'grid' && ui.isMobile" :tasks="filteredTasks" @add="openQuickAdd" />
+    <GridView v-else-if="view === 'grid'" :tasks="filteredTasks" :style="panelPad" />
     <ScheduleView v-else-if="view === 'schedule'" :tasks="filteredTasks" />
     <ChartsView v-else-if="view === 'charts'" :tasks="filteredTasks" />
+
+    <!-- 手機版：新增工作按鈕 -->
+    <button
+      v-if="ui.isMobile && view !== 'charts' && !ui.detail"
+      class="fixed z-20 right-4 bottom-[calc(20px+env(safe-area-inset-bottom))] h-12 pl-4 pr-5 rounded-full bg-accent text-white font-semibold text-sm flex items-center gap-1.5 shadow-[0_6px_16px_rgba(0,90,158,.35)] active:scale-95 transition-transform cursor-pointer"
+      @click="openQuickAdd(view === 'board' ? activeBucket : null)"
+    >
+      <Icon name="plus" :size="18" :stroke="2.4" />新增工作
+    </button>
+    <QuickAddSheet v-model="quickAddOpen" :initial-bucket-id="quickAddBucket" />
 
     <PlanSettingsDialog v-model="settingsOpen" :initial-tab="settingsTab" />
   </template>
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import {
+  computed, nextTick, reactive, ref, watch,
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Icon from '@/components/Icon.vue';
 import Avatar from '@/components/Avatar.vue';
@@ -113,6 +187,8 @@ import Popover from '@/components/Popover.vue';
 import PlanIcon from '@/components/PlanIcon.vue';
 import BoardView from '@/components/plan/BoardView.vue';
 import GridView from '@/components/plan/GridView.vue';
+import ListView from '@/components/plan/ListView.vue';
+import QuickAddSheet from '@/components/plan/QuickAddSheet.vue';
 import ScheduleView from '@/components/plan/ScheduleView.vue';
 import ChartsView from '@/components/plan/ChartsView.vue';
 import FilterPanel from '@/components/plan/FilterPanel.vue';
@@ -120,7 +196,7 @@ import MembersPanel from '@/components/plan/MembersPanel.vue';
 import PlanSettingsDialog from '@/components/plan/PlanSettingsDialog.vue';
 import { GROUP_OPTIONS } from '@/utils/grouping';
 import {
-  applyFilters, countFilters, emptyFilters, priorityLabel, progressLabel, labelName,
+  applyFilters, countFilters, emptyFilters, priorityLabel, progressLabel, labelName, dueCategory,
 } from '@/utils/planner';
 import { usePlanStore } from '@/stores/plan';
 import { useAuthStore } from '@/stores/auth';
@@ -148,6 +224,70 @@ const filters = reactive(emptyFilters());
 const filterCount = computed(() => countFilters(filters));
 const filteredTasks = computed(() => (plan.value ? applyFilters(planStore.tasks, filters) : []));
 const clearFilters = () => Object.assign(filters, emptyFilters());
+
+// 電腦版工作面板開著時，內容縮到面板左邊，被蓋住的欄位可以捲動過去看
+const panelPad = computed(() => (ui.detail && !ui.isMobile ? { paddingRight: 'min(620px, 100vw - 320px)' } : null));
+
+// 進度摘要
+const stats = computed(() => {
+  const all = planStore.tasks;
+  const done = all.filter((t) => t.progress === 100).length;
+  return {
+    total: all.length,
+    done,
+    pct: all.length ? Math.round((done / all.length) * 100) : 0,
+    late: all.filter((t) => dueCategory(t) === 'late').length,
+  };
+});
+
+// 快速篩選：一鍵套用常用條件（與「篩選」面板共用同一組條件）
+const WEEK = ['today', 'tomorrow', 'thisWeek'];
+const quickFilters = computed(() => {
+  const me = auth.user?.id;
+  const open = planStore.tasks.filter((t) => t.progress !== 100);
+  return [
+    {
+      key: 'mine', label: '指派給我', icon: 'user', field: 'assignees', value: [me], count: open.filter((t) => t.assigneeIds.includes(me)).length,
+    },
+    {
+      key: 'late', label: '逾期', field: 'due', value: ['late'], count: stats.value.late, danger: true,
+    },
+    {
+      key: 'week', label: '本週到期', field: 'due', value: WEEK, count: open.filter((t) => WEEK.includes(dueCategory(t))).length,
+    },
+    {
+      key: 'open', label: '隱藏已完成', field: 'progress', value: [0, 50],
+    },
+  ];
+});
+const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+const isQuickOn = (q) => sameSet(filters[q.field], q.value);
+function toggleQuick(q) {
+  filters[q.field] = isQuickOn(q) ? [] : [...q.value];
+}
+
+// 手機版搜尋
+const searchOpen = ref(false);
+const searchEl = ref(null);
+async function toggleSearch() {
+  searchOpen.value = !searchOpen.value;
+  if (!searchOpen.value) filters.keyword = '';
+  await nextTick();
+  searchEl.value?.focus();
+}
+function closeSearch() {
+  filters.keyword = '';
+  searchOpen.value = false;
+}
+
+// 手機版新增工作
+const quickAddOpen = ref(false);
+const quickAddBucket = ref(null);
+const activeBucket = ref(null); // 手機看板目前看到的貯體
+function openQuickAdd(bucketId) {
+  quickAddBucket.value = bucketId;
+  quickAddOpen.value = true;
+}
 
 const groupKey = `planner_group_${planId}`;
 const groupBy = ref(localStorage.getItem(groupKey) || 'bucket');

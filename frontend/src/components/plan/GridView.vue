@@ -33,8 +33,8 @@
       <div
         v-for="t in sorted"
         :key="t.id"
-        :class="rowGrid"
-        class="group h-11 border-b border-line last:border-0 bg-white hover:bg-[#fafafa] text-sm"
+        :class="[rowGrid, ui.detail?.taskId === t.id ? 'bg-[#eff6fc]' : 'bg-white hover:bg-[#fafafa]']"
+        class="group h-11 border-b border-line last:border-0 text-sm"
       >
         <button class="sticky left-0 z-[1] bg-inherit h-full flex items-center justify-center cursor-pointer" :title="t.progress === 100 ? '標示為未完成' : '標示為完成'" @click="update(t, { progress: t.progress === 100 ? 0 : 100 })">
           <ProgressIcon :value="t.progress === 100 ? 100 : 0" :size="18" />
