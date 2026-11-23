@@ -4,6 +4,7 @@
       <div>
         <label class="field-label">地點名稱</label>
         <input ref="titleEl" v-model="form.title" class="input" maxlength="100" placeholder="例如：淺草寺" />
+        <p class="mt-1 text-[11px] leading-4 text-ink-4">用店名最好：「Google 地圖」連結會直接開到這間店。</p>
       </div>
 
       <div>
@@ -91,16 +92,21 @@
         <a :href="googlePlaceUrl(form)" target="_blank" rel="noopener" class="text-accent hover:underline whitespace-nowrap">Google 地圖</a>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-[1fr_1fr] sm:grid-cols-[1fr_1fr_104px] gap-3">
         <div>
           <label class="field-label">預估花費</label>
-          <input v-model="form.cost" type="number" min="0" step="1" class="input" placeholder="0" />
+          <input v-model="form.cost" type="number" min="0" step="any" class="input" placeholder="0" />
           <p class="mt-1 text-[11px] leading-4 text-ink-4">計入「{{ budgetGroupOf(form.category).label }}」</p>
         </div>
         <div>
           <label class="field-label">{{ form.lane?.phase === 'depart' ? '從這裡出發的交通費' : '到這裡的交通費' }}</label>
-          <input ref="arriveCostEl" v-model="form.arriveCost" type="number" min="0" step="1" class="input" placeholder="0" />
+          <input ref="arriveCostEl" v-model="form.arriveCost" type="number" min="0" step="any" class="input" placeholder="0" />
           <p class="mt-1 text-[11px] leading-4 text-ink-4">{{ form.lane?.phase === 'depart' ? '前往下一站的車票、油錢等' : '從上一站過來的車票、油錢等' }}，計入「交通」</p>
+        </div>
+        <div class="col-span-2 sm:col-span-1">
+          <label class="field-label">幣別</label>
+          <CurrencySelect v-model="form.currency" :follow-label="`${tripMoney.currency}（行程）`" />
+          <p v-if="form.currency && form.currency !== tripMoney.currency" class="mt-1 text-[11px] leading-4 text-ink-4">{{ rateText(form.currency, tripMoney.currency) }}</p>
         </div>
       </div>
 
@@ -128,8 +134,10 @@ import {
 import Modal from '../Modal.vue';
 import Icon from '../Icon.vue';
 import CategoryManager from './CategoryManager.vue';
+import CurrencySelect from './CurrencySelect.vue';
+import { rateText } from '@/utils/currency';
 import {
-  CATEGORIES, categoryInfo, customCategories, googlePlaceUrl, budgetGroupOf,
+  CATEGORIES, categoryInfo, customCategories, googlePlaceUrl, budgetGroupOf, tripMoney,
 } from '@/utils/trip';
 
 const props = defineProps({
@@ -184,6 +192,7 @@ watch(() => props.modelValue, async (v) => {
     address: v.address || '',
     cost: v.cost ?? '',
     arriveCost: v.arriveCost ?? '',
+    currency: v.currency || null,
     notes: v.notes || '',
     lat: v.lat,
     lng: v.lng,

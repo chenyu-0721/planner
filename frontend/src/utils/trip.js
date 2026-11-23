@@ -1,6 +1,7 @@
 import { reactive } from 'vue';
 import { addDays, diffDays, parseDate, sortOrderAt } from './planner';
 import { cachedRailRoute, fetchRailRoute } from './railRoute';
+import { fmtMoney, toBase } from './currency';
 
 // 地點類別（地圖圖標）
 export const CATEGORIES = [
@@ -13,6 +14,21 @@ export const CATEGORIES = [
   { key: 'other', label: '其他', emoji: '📌' },
 ];
 export const categoryInfo = (key) => CATEGORIES.find((c) => c.key === key) || CATEGORIES[0];
+
+// 地圖上的店家 / 搜尋結果的 OpenStreetMap 類型 → 地點類別（加入行程時預設的圖標）
+const KIND_CATEGORY = [
+  [/restaurant|cafe|fast_food|food|bar|pub|beer|bakery|ice_cream|biergarten|confectionery|deli|tea|noodle|sushi|ramen/, 'food'],
+  [/hotel|motel|hostel|guest_house|lodging|apartment|camp_site|chalet|resort/, 'hotel'],
+  [/station|railway|rail|bus|airport|aerodrome|ferry|terminal|subway|tram|transit|parking|fuel|taxi|harbour|halt/, 'transport'],
+  [/shop|mall|market|supermarket|department_store|clothes|gift|convenience|grocery|books|electronics|outlet/, 'shopping'],
+  [/theatre|cinema|stadium|zoo|theme_park|amusement|aquarium|water_park|sports|spa|golf|swimming|bowling|karaoke|arts_centre|music|nightclub/, 'activity'],
+  [/museum|attraction|viewpoint|park|monument|memorial|castle|temple|shrine|place_of_worship|church|beach|peak|waterfall|garden|gallery|historic|ruins|nature|island|lake|artwork/, 'sight'],
+];
+export function guessCategory(kind) {
+  const k = String(kind || '').toLowerCase();
+  if (!k) return 'sight';
+  return KIND_CATEGORY.find(([re]) => re.test(k))?.[1] || 'other';
+}
 
 // 自訂圖標（所有使用者共用，隨行程資料一起載入）
 export const customCategories = reactive([]);
@@ -73,7 +89,22 @@ export function distanceKm(a, b) {
 }
 export const fmtDistance = (km) => (km < 1 ? `${Math.round(km * 1000)} 公尺` : `${km.toFixed(km < 10 ? 1 : 0)} 公里`);
 
-export const fmtCost = (v) => (v == null ? '' : `$${Number(v).toLocaleString()}`);
+/* ---------- 金額 ----------
+ * 行程有一個結算幣別（trip.currency），地點的花費可以用其他幣別（stop.currency），合計時依匯率換算。
+ * 目前開啟的行程幣別放在 tripMoney，讓各元件不用一層層傳。
+ */
+export const tripMoney = reactive({ currency: 'TWD' });
+export const fmtCost = (v, currency) => (v == null ? '' : fmtMoney(v, currency || tripMoney.currency));
+/** 地點的花費換算成結算幣別（查不到匯率時先用原數字） */
+export const toTripMoney = (v, currency) => (v ? (toBase(v, currency || tripMoney.currency, tripMoney.currency) ?? v) : 0);
+/** 金額不是結算幣別時，顯示原幣別與換算值，例如「¥3,000（≈ NT$650）」 */
+export function fmtStopMoney(v, currency) {
+  if (v == null) return '';
+  const cur = currency || tripMoney.currency;
+  if (cur === tripMoney.currency) return fmtMoney(v, cur);
+  const conv = toBase(v, cur, tripMoney.currency);
+  return conv == null ? fmtMoney(v, cur) : `${fmtMoney(v, cur)}（≈ ${fmtMoney(Math.round(conv), tripMoney.currency)}）`;
+}
 
 /**
  * 設定時間後，依時間把地點排到當天適當位置，回傳新的 sortOrder
@@ -90,43 +121,18 @@ export function sortOrderForTime(dayStops, stop, time) {
   return sortOrderAt(list, index);
 }
 
-/* ---------- 地圖範圍與底圖（鎖定台灣） ---------- */
+/* ---------- 台灣範圍（衛星底圖在這個範圍內改用國土測繪中心的正射影像） ---------- */
 
 // 台灣本島、澎湖、金門、馬祖、蘭嶼、綠島
 export const TAIWAN_BOUNDS = [[21.6, 117.9], [26.6, 122.4]];
 export const TAIWAN_CENTER = [23.7, 120.95];
 export const MIN_ZOOM = 7;
 
-const NLSC_ATTR = '&copy; <a href="https://maps.nlsc.gov.tw/" target="_blank">內政部國土測繪中心</a>';
-export const BASE_LAYERS = [
-  {
-    key: 'emap',
-    name: '臺灣通用電子地圖',
-    url: 'https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}',
-    attribution: NLSC_ATTR,
-    maxNativeZoom: 19,
-  },
-  {
-    key: 'photo',
-    name: '衛星空照（正射影像）',
-    url: 'https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}',
-    attribution: NLSC_ATTR,
-    maxNativeZoom: 19,
-  },
-  {
-    key: 'osm',
-    name: 'OpenStreetMap',
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors',
-    maxNativeZoom: 19,
-  },
-];
-
 export const inTaiwan = (lat, lng) => lat >= TAIWAN_BOUNDS[0][0] && lat <= TAIWAN_BOUNDS[1][0]
   && lng >= TAIWAN_BOUNDS[0][1] && lng <= TAIWAN_BOUNDS[1][1];
 
 /* ---------- 地點搜尋 ----------
- * Photon（OpenStreetMap 資料，允許邊打字邊搜尋），限定台灣、以目前行程位置為中心排序。
+ * Photon（OpenStreetMap 資料，允許邊打字邊搜尋），全世界都可以搜尋，以目前地圖 / 行程位置為中心排序。
  * lang=default：使用當地名稱（台灣即中文）。不指定時 Photon 會依瀏覽器語言回傳，
  * 但它不支援中文，會改用英文名稱（例如「Taipei 101」）。
  * 會順便去掉空白、全形，以及結尾的「店／餐廳」，多試一次。
@@ -144,37 +150,97 @@ function searchVariants(query) {
   return [...new Set([half, compact, stripped].filter((q) => q.length >= 2))].slice(0, 2);
 }
 
+// 中文地區（台灣、港澳、中國）地址由大到小；其他國家照當地習慣由小到大、逗號分隔
+const CJK_ADDRESS = new Set(['TW', 'HK', 'MO', 'CN']);
+function photonPlace(f) {
+  const p = f.properties;
+  const [lng, lat] = f.geometry.coordinates;
+  const cc = (p.countrycode || '').toUpperCase();
+  let address;
+  if (CJK_ADDRESS.has(cc)) {
+    address = joinAddress(cc === 'TW' ? '' : p.country, p.state !== p.city ? p.state : '', p.county, p.city, p.district, p.street, withHao(p.housenumber));
+  } else {
+    const street = [p.housenumber, p.street].filter(Boolean).join(' ');
+    address = [...new Set([street, p.district || p.locality, p.city, p.state, p.country].filter(Boolean))].join(', ');
+  }
+  return {
+    title: p.name || (CJK_ADDRESS.has(cc) ? joinAddress(p.street, withHao(p.housenumber)) : [p.housenumber, p.street].filter(Boolean).join(' ')) || p.city || '新地點',
+    address,
+    lat,
+    lng,
+    country: cc,
+    kind: p.osm_value || '',
+  };
+}
+
 async function photonSearch(query, signal, center) {
-  const [[s, w], [n, e]] = TAIWAN_BOUNDS;
-  let url = `${PHOTON}?q=${encodeURIComponent(query)}&limit=20&lang=default&bbox=${w},${s},${e},${n}`;
-  if (center) url += `&lat=${center.lat.toFixed(4)}&lon=${center.lng.toFixed(4)}&location_bias_scale=0.3`;
+  let url = `${PHOTON}?q=${encodeURIComponent(query)}&limit=20&lang=default`;
+  if (center) url += `&lat=${center.lat.toFixed(4)}&lon=${center.lng.toFixed(4)}&location_bias_scale=0.3&zoom=${center.zoom ? Math.round(center.zoom) : 12}`;
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error('地點搜尋失敗，請稍後再試');
   const data = await res.json();
-  return (data.features || [])
-    .filter((f) => f.properties?.countrycode === 'TW' && f.geometry?.coordinates)
-    .map((f) => {
-      const p = f.properties;
-      const [lng, lat] = f.geometry.coordinates;
-      const address = joinAddress(p.county, p.city, p.district, p.street, withHao(p.housenumber));
-      return {
-        title: p.name || joinAddress(p.street, withHao(p.housenumber)) || p.city || '新地點',
-        address,
-        lat,
-        lng,
-      };
-    });
+  return (data.features || []).filter((f) => f.geometry?.coordinates).map(photonPlace);
 }
 
-export async function searchPlaces(query, signal, center) {
+/** 座標附近的地點或地址（地圖上長按 / 按右鍵時使用） */
+export async function reversePlace(lat, lng, signal) {
+  try {
+    const res = await fetch(`https://photon.komoot.io/reverse?lat=${lat.toFixed(6)}&lon=${lng.toFixed(6)}&lang=default&limit=1`, { signal });
+    const data = res.ok ? await res.json() : null;
+    const f = data?.features?.[0];
+    if (f?.geometry?.coordinates) return { ...photonPlace(f), lat, lng };
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+  }
+  return { title: '地圖上的位置', address: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng };
+}
+
+/**
+ * Nominatim（OpenStreetMap 官方搜尋）：會比對各種語言的名稱，例如用「東京鐵塔」找到東京タワー。
+ * 使用規範不允許邊打字邊搜尋，所以只在使用者按 Enter（明確送出）時查詢。
+ */
+const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+async function nominatimSearch(query, signal, center) {
+  const params = new URLSearchParams({
+    q: query, format: 'jsonv2', limit: '8', addressdetails: '1', namedetails: '1', 'accept-language': 'zh-TW,zh,en',
+  });
+  if (center) {
+    // 以目前位置附近為優先（不限制範圍）
+    const d = 1.5;
+    params.set('viewbox', [center.lng - d, center.lat + d, center.lng + d, center.lat - d].map((v) => v.toFixed(3)).join(','));
+  }
+  const res = await fetch(`${NOMINATIM}?${params}`, { signal });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.map((r) => {
+    const a = r.address || {};
+    const cc = (a.country_code || '').toUpperCase();
+    const n = r.namedetails || {};
+    const title = n['name:zh-Hant'] || n['name:zh-TW'] || r.name || n.name || String(r.display_name).split(',')[0];
+    const parts = String(r.display_name).split(',').map((x) => x.trim()).filter((x) => x && x !== title);
+    return {
+      title,
+      address: (CJK_ADDRESS.has(cc) ? parts.reverse().join('') : parts.slice(0, 4).join(', ')),
+      lat: Number(r.lat),
+      lng: Number(r.lon),
+      country: cc,
+      kind: r.type || r.category || '',
+    };
+  });
+}
+
+export async function searchPlaces(query, signal, center, { deep = false } = {}) {
   const variants = searchVariants(query);
   const batches = [];
+  // 按 Enter 時同時查 Nominatim（中文名稱的國外地點常常只有它找得到），結果排前面
+  if (deep) batches.push(...await nominatimSearch(query, signal, center).catch((e) => (e.name === 'AbortError' ? Promise.reject(e) : [])));
   for (const variant of variants) {
     const rows = await photonSearch(variant, signal, center);
     batches.push(...rows);
     if (batches.length >= 8) break;
   }
-  const unique = batches.filter((r, i, arr) => arr.findIndex((x) => x.title === r.title && Math.abs(x.lat - r.lat) < 1e-4) === i);
+  const unique = batches.filter((r, i, arr) => arr.findIndex((x) => (x.title === r.title || distanceKm(x, r) < 0.05) && distanceKm(x, r) < 0.3) === i);
+  if (deep) return unique.slice(0, 10); // 明確搜尋：保留相關度順序（Nominatim 在前）
   // 行程附近（40 公里內）的結果排前面，其餘維持原本的相關度順序
   const NEAR_KM = 40;
   const near = center ? unique.filter((r) => distanceKm(center, r) <= NEAR_KM) : [];
@@ -236,14 +302,19 @@ export const TRAVEL_MODES = [
   { key: 'scooter', label: '機車', emoji: '🛵', kind: 'road', engine: 'valhalla', costing: 'motor_scooter', gmaps: 'driving', fallbackSpeed: 32 },
   { key: 'bike', label: '腳踏車', emoji: '🚲', kind: 'road', engine: 'osrm', profile: 'routed-bike/route/v1/bike', gmaps: 'bicycling', fallbackSpeed: 15 },
   { key: 'foot', label: '步行', emoji: '🚶', kind: 'road', engine: 'osrm', profile: 'routed-foot/route/v1/foot', gmaps: 'walking', fallbackSpeed: 4.5 },
+  // 公車 / 客運：沿汽車道路，時間乘上 1.4（停站、等車）
+  { key: 'bus', label: '公車・客運', emoji: '🚌', kind: 'road', engine: 'osrm', profile: 'routed-car/route/v1/driving', gmaps: 'transit', fallbackSpeed: 30, durationFactor: 1.4 },
   // speed：直線後備的時速。trackSpeed：沿著軌道時的時速（含停靠）
   { key: 'hsr', label: '高鐵', emoji: '🚄', kind: 'rail', speed: 165, trackSpeed: 180, gmaps: 'transit' },
   { key: 'train', label: '火車', emoji: '🚆', kind: 'rail', speed: 60, trackSpeed: 80, gmaps: 'transit' },
-  { key: 'mrt', label: '捷運', emoji: '🚇', kind: 'rail', speed: 25, trackSpeed: 34, gmaps: 'transit' },
+  { key: 'mrt', label: '捷運・地鐵', emoji: '🚇', kind: 'rail', speed: 25, trackSpeed: 34, gmaps: 'transit' },
+  // 長途：依直線距離估算（飛機另加 2 小時報到、通關）
+  { key: 'flight', label: '飛機', emoji: '✈️', kind: 'air', speed: 750, overhead: 2 * 3600, gmaps: 'transit' },
+  { key: 'ferry', label: '渡輪・船', emoji: '⛴️', kind: 'sea', speed: 28, overhead: 20 * 60, gmaps: 'transit' },
   { key: 'straight', label: '直線', emoji: '📏', kind: 'line', gmaps: 'driving' },
 ];
-// 行程預設只能選道路類與直線（高鐵 / 火車 / 捷運只用在單一路段）
-export const DEFAULT_TRAVEL_MODES = TRAVEL_MODES.filter((m) => m.kind !== 'rail');
+// 行程預設只能選這幾種（公車、軌道、飛機、渡輪只用在單一路段）
+export const DEFAULT_TRAVEL_MODES = TRAVEL_MODES.filter((m) => ['car', 'scooter', 'bike', 'foot', 'straight'].includes(m.key));
 export const travelModeInfo = (key) => TRAVEL_MODES.find((m) => m.key === key) || TRAVEL_MODES[0];
 
 // Valhalla 的路線使用 polyline（精度 6 位）編碼
@@ -470,6 +541,10 @@ async function routeRoadRun(mode, points) {
     }
   }
 
+  if (info.durationFactor) {
+    for (let k = 0; k < n; k += 1) if (legs[k] && !legs[k].approx) legs[k] = { ...legs[k], duration: legs[k].duration * info.durationFactor };
+  }
+
   const straight = (k) => [points[k], points[k + 1]].map((pt) => [pt.lat, pt.lng]);
   const lines = wholeLine && legs.every(Boolean)
     ? [{ mode, coords: wholeLine }]
@@ -556,11 +631,46 @@ export async function planDayRoute(stops, defaultMode) {
       run.legs = legs;
       return;
     }
+    if (info.kind === 'air' || info.kind === 'sea') {
+      run.lines = run.segs.map((seg) => ({ mode: run.mode, coords: info.kind === 'air' ? greatCircle(seg.from, seg.to) : straightLeg(seg) }));
+      run.legs = run.segs.map((seg) => {
+        const km = distanceKm(seg.from, seg.to) * (info.kind === 'sea' ? 1.15 : 1);
+        return {
+          mode: run.mode, distance: km, duration: (km / info.speed) * 3600 + (info.overhead || 0), estimated: true,
+        };
+      });
+      return;
+    }
     run.lines = run.segs.map((seg) => ({ mode: run.mode, coords: straightLeg(seg) }));
     run.legs = run.segs.map((seg) => ({ mode: run.mode, distance: distanceKm(seg.from, seg.to), duration: null, estimated: false }));
   }));
 
   return { lines: runs.flatMap((r) => r.lines), legs: runs.flatMap((r) => r.legs) };
+}
+
+/** 兩點之間的大圓航線（飛機），回傳 [lat, lng][]；跨越換日線時經度連續，地圖上不會繞地球一圈 */
+export function greatCircle(a, b, n = 48) {
+  const rad = (v) => (v * Math.PI) / 180;
+  const deg = (v) => (v * 180) / Math.PI;
+  const [la1, lo1, la2, lo2] = [rad(a.lat), rad(a.lng), rad(b.lat), rad(b.lng)];
+  const d = 2 * Math.asin(Math.sqrt(Math.sin((la2 - la1) / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin((lo2 - lo1) / 2) ** 2));
+  if (!d) return [[a.lat, a.lng], [b.lat, b.lng]];
+  const out = [];
+  let prevLng = null;
+  for (let i = 0; i <= n; i += 1) {
+    const f = i / n;
+    const A = Math.sin((1 - f) * d) / Math.sin(d);
+    const B = Math.sin(f * d) / Math.sin(d);
+    const x = A * Math.cos(la1) * Math.cos(lo1) + B * Math.cos(la2) * Math.cos(lo2);
+    const y = A * Math.cos(la1) * Math.sin(lo1) + B * Math.cos(la2) * Math.sin(lo2);
+    const z = A * Math.sin(la1) + B * Math.sin(la2);
+    let lng = deg(Math.atan2(y, x));
+    if (prevLng != null) while (lng - prevLng > 180) lng -= 360;
+    if (prevLng != null) while (lng - prevLng < -180) lng += 360;
+    prevLng = lng;
+    out.push([deg(Math.atan2(z, Math.sqrt(x * x + y * y))), lng]);
+  }
+  return out;
 }
 
 /** 背景補上軌道。每一段完成就呼叫 onLeg，呼叫端可先顯示直線。 */
@@ -621,8 +731,11 @@ export function googlePlaceUrl(stop) {
   return `https://www.google.com/maps/search/${encodeURIComponent(name)}/@${ll(stop)},17z`;
 }
 
-// 單一路段（高鐵 / 火車 / 捷運會用大眾運輸，可查實際班次）
+// 單一路段（高鐵 / 火車 / 捷運會用大眾運輸，可查實際班次；飛機開 Google 航班搜尋）
 export function googleSegmentUrl(from, to, mode) {
+  if (travelModeInfo(mode).kind === 'air') {
+    return `https://www.google.com/travel/flights?q=${encodeURIComponent(`Flights from ${from.title || ll(from)} to ${to.title || ll(to)}`)}`;
+  }
   const params = new URLSearchParams({
     api: '1', origin: ll(from), destination: ll(to), travelmode: travelModeInfo(mode).gmaps,
   });
@@ -823,8 +936,8 @@ export const BUDGET_GROUPS = [
 ];
 export const budgetGroupOf = (category) => BUDGET_GROUPS.find((g) => g.categories.includes(category)) || BUDGET_GROUPS[BUDGET_GROUPS.length - 1];
 
-/** 某地點的花費合計（地點花費 + 到這裡的交通費） */
-export const stopTotal = (s) => (s.cost || 0) + (s.arriveCost || 0);
+/** 某地點的花費合計（地點花費 + 到這裡的交通費），換算成行程的結算幣別 */
+export const stopTotal = (s) => toTripMoney(s.cost, s.currency) + toTripMoney(s.arriveCost, s.currency);
 
 /**
  * 依類別、日期與成員加總（只算已排入行程的地點；備選另外加總，不算進總額）
@@ -834,7 +947,7 @@ export const stopTotal = (s) => (s.cost || 0) + (s.arriveCost || 0);
  *   days: { date, title, subtitle, color, amount }[], backup: number, personal: Record<number, number>,
  * }}
  */
-export function computeBudget(stops, days, members = []) {
+export function computeBudget(stops, days, members = [], bookings = []) {
   const groups = BUDGET_GROUPS.map((g) => ({ ...g, amount: 0, items: [] }));
   const byKey = Object.fromEntries(groups.map((g) => [g.key, g]));
   const dayList = days.map((d) => ({ date: d.date, title: d.title, subtitle: d.subtitle, color: d.color, amount: 0 }));
@@ -843,18 +956,24 @@ export function computeBudget(stops, days, members = []) {
   const backup = stops.filter(isBackup).reduce((sum, s) => sum + stopTotal(s), 0);
   const personal = {};
 
+  // 不是結算幣別的金額，另外附上原幣別
+  const original = (v, s) => (s.currency && s.currency !== tripMoney.currency ? fmtMoney(v, s.currency) : '');
   const addCost = (s, sub) => {
     if (!s.cost) return;
     const g = byKey[budgetGroupOf(s.category).key];
-    g.amount += s.cost;
-    g.items.push({ id: s.id, label: `${stopCategory(s).emoji} ${s.title}`, sub, amount: s.cost });
+    const amount = toTripMoney(s.cost, s.currency);
+    g.amount += amount;
+    g.items.push({
+      id: s.id, label: `${stopCategory(s).emoji} ${s.title}`, sub, amount, original: original(s.cost, s),
+    });
   };
   const addFare = (s, from, to, sub) => {
     if (!s.arriveCost) return;
     const mode = s.arriveMode ? travelModeInfo(s.arriveMode) : null;
-    byKey.transport.amount += s.arriveCost;
+    const amount = toTripMoney(s.arriveCost, s.currency);
+    byKey.transport.amount += amount;
     byKey.transport.items.push({
-      id: s.id, label: `${mode ? mode.emoji : '🧭'} ${from} → ${to}`, sub: `${sub}${mode ? `・${mode.label}` : ''}`, amount: s.arriveCost, fare: true,
+      id: s.id, label: `${mode ? mode.emoji : '🧭'} ${from} → ${to}`, sub: `${sub}${mode ? `・${mode.label}` : ''}`, amount, fare: true, original: original(s.arriveCost, s),
     });
   };
 
@@ -883,6 +1002,25 @@ export function computeBudget(stops, days, members = []) {
       personal[lane.memberId] = (personal[lane.memberId] || 0) + stopTotal(s);
       if (day) day.amount += stopTotal(s);
     });
+  }
+
+  // 預訂（機票、住宿…）：共同花費，依類型歸到交通 / 住宿 / 門票 / 其他
+  const BOOKING_GROUP = {
+    flight: 'transport', train: 'transport', car: 'transport', hotel: 'hotel', ticket: 'ticket', other: 'other',
+  };
+  const BOOKING_EMOJI = {
+    flight: '✈️', train: '🚄', car: '🚗', hotel: '🏨', ticket: '🎟️', other: '📎',
+  };
+  for (const b of bookings) {
+    if (!b.cost) continue;
+    const amount = toTripMoney(b.cost, b.currency);
+    const g = byKey[BOOKING_GROUP[b.kind] || 'other'];
+    g.amount += amount;
+    g.items.push({
+      id: `b${b.id}`, bookingId: b.id, label: `${BOOKING_EMOJI[b.kind] || '📎'} ${b.title}`, sub: '預訂', amount, original: original(b.cost, b),
+    });
+    const day = b.startAt && dayOf[b.startAt.slice(0, 10)];
+    if (day) day.amount += amount;
   }
 
   groups.forEach((g) => g.items.sort((a, b) => b.amount - a.amount));
@@ -958,9 +1096,11 @@ export function segmentInfo(modeKey, custom, leg, from, to, fare) {
   else if (leg.failed) r = { detail: `查不到道路（離島可能要搭船），以直線顯示 ${straight}`, failed: true };
   else if (leg.approx) r = { detail: `約 ${fmtDuration(leg.duration)} · ${fmtDistance(leg.distance)}（${info.label}路線暫時查不到，以汽車道路估算）` };
   else if (info.kind === 'rail') r = { detail: `約 ${fmtDuration(leg.duration)} · ${leg.alongTrack ? `軌道 ${fmtDistance(leg.distance)}` : `直線 ${straight}`}` };
+  else if (info.kind === 'air') r = { detail: `約 ${fmtDuration(leg.duration)}（含報到 2 小時）· 航程 ${fmtDistance(leg.distance)}` };
+  else if (info.kind === 'sea') r = { detail: `約 ${fmtDuration(leg.duration)} · 航程 ${fmtDistance(leg.distance)}` };
   else r = { detail: `${fmtDuration(leg.duration)} · ${fmtDistance(leg.distance)}` };
   return {
-    info, custom, failed: !!r.failed, detail: fare ? `${r.detail} · ${fmtCost(fare)}` : r.detail,
+    info, custom, failed: !!r.failed, detail: fare ? `${r.detail} · ${fmtCost(fare, to.currency)}` : r.detail,
   };
 }
 

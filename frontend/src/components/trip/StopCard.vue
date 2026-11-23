@@ -27,7 +27,7 @@
         <span v-if="weather" class="tabular-nums" :title="`${stop.startTime} 天氣：${weatherInfo(weather.code).label}`">
           {{ weatherInfo(weather.code).emoji }} {{ fmtTemp(weather.temp) }}<span v-if="weather.rain >= 20" :class="weather.rain >= 50 ? 'text-accent font-semibold' : ''"> ☔{{ weather.rain }}%</span>
         </span>
-        <span v-if="stop.cost != null">{{ fmtCost(stop.cost) }}</span>
+        <span v-if="stop.cost != null">{{ fmtStopMoney(stop.cost, stop.currency) }}</span>
         <span v-if="stop.address" class="truncate max-w-full">{{ stop.address }}</span>
       </div>
       <p v-if="stop.notes && !backup" class="text-xs text-ink-2 mt-0.5 line-clamp-2 whitespace-pre-line">{{ stop.notes }}</p>
@@ -47,7 +47,7 @@
 <script setup>
 import Icon from '@/components/Icon.vue';
 import Popover from '@/components/Popover.vue';
-import { stopCategory, fmtCost } from '@/utils/trip';
+import { stopCategory, fmtStopMoney } from '@/utils/trip';
 import { weatherInfo, fmtTemp } from '@/utils/weather';
 
 defineProps({

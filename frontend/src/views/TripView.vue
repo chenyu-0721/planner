@@ -8,197 +8,229 @@
 
   <div v-else-if="!trip" class="flex-1 flex items-center justify-center text-ink-3">載入中…</div>
 
-  <template v-else>
-    <!-- 標頭 -->
-    <div class="bg-white border-b border-line shrink-0 px-3 sm:px-6 py-3 flex items-center gap-3">
-      <TripIcon :color="trip.color" :size="36" />
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-1 min-w-0">
-          <h1 class="text-base sm:text-lg font-semibold truncate">{{ trip.name }}</h1>
-          <Popover close-on-click>
-            <template #trigger>
-              <button class="icon-btn shrink-0" title="更多選項"><Icon name="more" :size="18" /></button>
-            </template>
-            <button class="menu-item" @click="settingsOpen = true"><Icon name="settings" />行程設定</button>
-            <button class="menu-item" @click="fitMap"><Icon name="fit" />顯示全部地點</button>
-            <button class="menu-item" @click="budgetOpen = true"><Icon name="wallet" />預算與花費</button>
-            <div class="border-t border-line my-1"></div>
-            <button v-if="trip.isMember && trip.ownerId !== auth.user?.id" class="menu-item" @click="leave"><Icon name="door" />離開行程</button>
-            <button v-if="trip.canManage" class="menu-item !text-[#c50f1f]" @click="removeTrip"><Icon name="trash" />刪除行程</button>
-          </Popover>
-        </div>
-        <div class="text-xs text-ink-3 flex flex-wrap gap-x-3">
-          <span>{{ fmtTripRange(trip) }}</span>
-          <span>{{ stops.length }} 個地點</span>
-          <button type="button" class="hover:underline cursor-pointer" :class="overBudget ? 'text-[#c50f1f] font-semibold' : ''" title="預算與花費統計" @click="budgetOpen = true">
-            {{ totalCost ? `預估花費 ${fmtCost(totalCost)}` : '預算' }}<template v-if="trip.budget">／預算 {{ fmtCost(trip.budget) }}</template>
-          </button>
-        </div>
+  <div v-else ref="rootEl" class="flex-1 min-h-0 relative overflow-hidden flex">
+    <!-- ===== 行程面板：電腦是左側欄，手機是可以上下拉的底部抽屜 ===== -->
+    <aside
+      class="flex flex-col bg-white min-h-0"
+      :class="ui.isMobile
+        ? ['absolute inset-x-0 bottom-0 z-30 rounded-t-2xl shadow-[0_-4px_18px_rgba(0,0,0,.16)]', sheetDragging ? '' : 'transition-[height] duration-200 ease-out']
+        : 'relative z-10 w-[400px] lg:w-[440px] shrink-0 border-r border-line'"
+      :style="ui.isMobile ? { height: `${sheetHeight}px` } : null"
+    >
+      <!-- 抽屜把手（手機）：拖曳或點一下切換高度 -->
+      <div v-if="ui.isMobile" class="shrink-0 touch-none" @pointerdown="onGripDown">
+        <div class="pt-2 pb-1 flex justify-center"><span class="w-10 h-1.5 rounded-full bg-line-2"></span></div>
       </div>
 
-      <Popover placement="bottom-end">
-        <template #trigger>
-          <button class="flex items-center gap-2 h-8 px-2 rounded hover:bg-hover cursor-pointer" title="成員">
-            <div class="hidden sm:flex -space-x-1.5">
-              <Avatar v-for="m in members.slice(0, 4)" :key="m.id" :user="m" :size="26" ring />
-            </div>
-            <Icon name="user-plus" :size="16" class="text-ink-2" />
-          </button>
-        </template>
-        <div class="w-80">
-          <div class="px-3 pt-2 pb-1 text-sm font-semibold">成員（{{ members.length }}）</div>
-          <div class="px-3 pb-2">
-            <input v-model="memberKeyword" class="input" placeholder="輸入名稱以新增成員" />
-            <div v-if="memberKeyword" class="mt-1 border border-line rounded max-h-48 overflow-y-auto thin-scroll">
-              <button v-for="u in memberCandidates" :key="u.id" class="menu-item !h-10" @click="addMember(u)">
-                <Avatar :user="u" :size="26" /><span class="flex-1 truncate">{{ u.displayName }}</span><Icon name="plus" :size="14" class="text-accent" />
-              </button>
-              <div v-if="!memberCandidates.length" class="px-3 py-2 text-sm text-ink-3">找不到可新增的使用者</div>
-            </div>
+      <!-- 行程標頭 -->
+      <header class="shrink-0 px-4 pt-2 md:pt-4 pb-2 flex items-start gap-3" :class="ui.isMobile ? 'touch-none' : ''" @pointerdown="ui.isMobile && onGripDown($event)">
+        <TripIcon :color="trip.color" :size="ui.isMobile ? 34 : 40" class="shrink-0" />
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1 min-w-0">
+            <h1 class="text-base md:text-lg font-semibold truncate leading-6">{{ trip.name }}</h1>
           </div>
-          <div class="max-h-72 overflow-y-auto thin-scroll border-t border-line pt-1">
-            <div v-for="m in members" :key="m.id" class="group/m flex items-center gap-2.5 px-3 h-11 hover:bg-hover">
-              <Avatar :user="m" :size="30" />
-              <div class="flex-1 min-w-0">
-                <div class="text-sm truncate">{{ m.displayName }}</div>
-                <div class="text-xs text-ink-4">{{ m.tripRole === 'owner' ? '擁有者' : '成員' }}</div>
+          <div class="text-xs text-ink-3 flex flex-wrap gap-x-2 leading-5">
+            <span>{{ fmtTripRange(trip) }}</span>
+            <span v-if="countdown" class="text-accent font-semibold">{{ countdown }}</span>
+          </div>
+        </div>
+        <Popover placement="bottom-end">
+          <template #trigger>
+            <button class="flex items-center h-8 px-1 rounded hover:bg-hover cursor-pointer shrink-0" title="成員" @pointerdown.stop>
+              <div class="flex -space-x-1.5">
+                <Avatar v-for="m in members.slice(0, 3)" :key="m.id" :user="m" :size="26" ring />
               </div>
-              <button
-                v-if="m.tripRole !== 'owner' && trip.canManage"
-                class="icon-btn !size-7 touch-show opacity-0 group-hover/m:opacity-100"
-                title="從行程移除"
-                @click="removeMember(m)"
-              >
-                <Icon name="x" :size="14" />
-              </button>
+              <span v-if="members.length > 3" class="ml-1 text-xs text-ink-3">+{{ members.length - 3 }}</span>
+            </button>
+          </template>
+          <div class="w-[min(20rem,calc(100vw-2rem))]">
+            <div class="px-3 pt-2 pb-1 text-sm font-semibold">成員（{{ members.length }}）</div>
+            <div class="px-3 pb-2">
+              <input v-model="memberKeyword" class="input" placeholder="輸入名稱以新增成員" />
+              <div v-if="memberKeyword" class="mt-1 border border-line rounded max-h-48 overflow-y-auto thin-scroll">
+                <button v-for="u in memberCandidates" :key="u.id" class="menu-item !h-10" @click="addMember(u)">
+                  <Avatar :user="u" :size="26" /><span class="flex-1 truncate">{{ u.displayName }}</span><Icon name="plus" :size="14" class="text-accent" />
+                </button>
+                <div v-if="!memberCandidates.length" class="px-3 py-2 text-sm text-ink-3">找不到可新增的使用者</div>
+              </div>
+            </div>
+            <div class="max-h-72 overflow-y-auto thin-scroll border-t border-line pt-1">
+              <div v-for="m in members" :key="m.id" class="group/m flex items-center gap-2.5 px-3 h-11 hover:bg-hover">
+                <Avatar :user="m" :size="30" />
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm truncate">{{ m.displayName }}</div>
+                  <div class="text-xs text-ink-4">{{ m.tripRole === 'owner' ? '擁有者' : '成員' }}</div>
+                </div>
+                <button
+                  v-if="m.tripRole !== 'owner' && trip.canManage"
+                  class="icon-btn !size-7 touch-show opacity-0 group-hover/m:opacity-100"
+                  title="從行程移除"
+                  @click="removeMember(m)"
+                >
+                  <Icon name="x" :size="14" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </Popover>
-    </div>
+        </Popover>
+        <Popover close-on-click placement="bottom-end">
+          <template #trigger>
+            <button class="icon-btn shrink-0" title="更多選項" @pointerdown.stop><Icon name="more" :size="18" /></button>
+          </template>
+          <button class="menu-item" @click="settingsOpen = true"><Icon name="settings" />行程設定（日期、幣別）</button>
+          <button class="menu-item" @click="budgetOpen = true"><Icon name="wallet" />預算與花費</button>
+          <button class="menu-item" @click="fitMap"><Icon name="fit" />地圖顯示全部地點</button>
+          <div class="border-t border-line my-1"></div>
+          <button v-if="trip.isMember && trip.ownerId !== auth.user?.id" class="menu-item" @click="leave"><Icon name="door" />離開行程</button>
+          <button v-if="trip.canManage" class="menu-item !text-[#c50f1f]" @click="removeTrip"><Icon name="trash" />刪除行程</button>
+        </Popover>
+      </header>
 
-    <!-- 手機：切換清單 / 地圖 -->
-    <div class="md:hidden flex bg-white border-b border-line shrink-0">
-      <button v-for="t in mobileTabs" :key="t.key" class="flex-1 h-10 flex items-center justify-center gap-1.5 text-sm border-b-[3px] cursor-pointer"
-              :class="mobileTab === t.key ? 'border-brand font-semibold' : 'border-transparent text-ink-2'" @click="mobileTab = t.key">
-        <Icon :name="t.icon" :size="16" />{{ t.label }}
-      </button>
-    </div>
-
-    <div class="flex-1 min-h-0 flex">
-      <!-- 行程清單 -->
-      <aside
-        class="w-full md:w-[380px] lg:w-[420px] shrink-0 md:border-r border-line bg-[#fafafa] flex-col min-h-0"
-        :class="mobileTab === 'list' ? 'flex' : 'hidden md:flex'"
+      <!-- 花費摘要 -->
+      <button
+        type="button"
+        class="shrink-0 mx-4 mb-2 flex items-center gap-2 rounded-lg bg-[#f5f5f5] hover:bg-hover px-3 h-9 text-xs cursor-pointer"
+        title="預算與花費統計"
+        @pointerdown.stop
+        @click="budgetOpen = true"
       >
-        <!-- 新增地點 -->
-        <div class="p-3 border-b border-line bg-white space-y-2">
-          <form class="relative" @submit.prevent="search">
-            <Icon name="search" :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" />
-            <input ref="searchInput" v-model="query" class="input !pl-8" placeholder="搜尋地點，或貼上 Google 地圖連結" maxlength="2000" @input="onQueryInput" />
-          </form>
-          <div v-if="laneTarget" class="flex items-center gap-2 rounded bg-accent-light text-accent text-xs px-2 py-1.5">
-            <Avatar :user="laneTarget.member" :size="20" />
-            <span class="flex-1 min-w-0 leading-4">正在加入 <b>{{ laneTarget.member.displayName }}</b> 的{{ laneTarget.phaseLabel }}地點：搜尋地點、貼上 Google 地圖連結或座標</span>
-            <button class="shrink-0 hover:underline cursor-pointer" @click="laneTarget = null">取消</button>
-          </div>
-          <div v-if="searching" class="text-xs text-ink-3 px-1">搜尋中…</div>
-          <div v-else-if="results" class="rounded border border-line bg-white max-h-64 overflow-y-auto thin-scroll">
-            <div class="flex items-start justify-between gap-2 px-3 py-2 text-xs leading-4 text-ink-3 border-b border-line">
-              <span class="min-w-0">{{ results.length ? (searchNote || (laneTarget ? `點選地點加入${laneTarget.member.displayName}的${laneTarget.phaseLabel}路線` : '點選地點加入行程，或按「＋備選」先放著')) : (searchNote || '找不到符合的地點') }}</span>
-              <button class="hover:text-ink cursor-pointer shrink-0" @click="results = null"><Icon name="x" :size="13" /></button>
-            </div>
-            <div v-for="(r, i) in results" :key="i" class="flex items-stretch border-b border-line last:border-0">
-              <button class="flex-1 min-w-0 text-left px-3 py-2 hover:bg-hover cursor-pointer" @click="openNewStop(r)">
-                <div class="text-sm font-semibold truncate">{{ r.title }}</div>
-                <div class="text-xs text-ink-3 line-clamp-2">{{ r.address }}</div>
-              </button>
-              <button v-if="!laneTarget" class="shrink-0 px-3 text-xs text-accent border-l border-line hover:bg-hover cursor-pointer" title="先放到備選，之後再決定要不要去" @click="openNewStop(r, true)">＋備選</button>
-            </div>
-            <div v-if="!results.length && !isGoogleMapsUrl(query)" class="px-3 py-2 border-t border-line">
-              <a :href="googleMapsSearchUrl" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-sm text-accent hover:underline">
-                在 Google 地圖搜尋「{{ query.trim() }}」<Icon name="external" :size="12" />
-              </a>
-              <p class="mt-1 text-xs leading-5 text-ink-3">找到後按「分享」→「複製連結」，貼回上方搜尋框就能加入行程。</p>
-            </div>
-          </div>
-        </div>
+        <Icon name="wallet" :size="14" class="text-ink-3 shrink-0" />
+        <span class="text-ink-2">預估花費</span>
+        <span class="font-semibold tabular-nums" :class="overBudget ? 'text-[#c50f1f]' : ''">{{ fmtCost(totalCost) }}</span>
+        <span v-if="trip.budget" class="text-ink-3 tabular-nums">／預算 {{ fmtCost(trip.budget) }}</span>
+        <span v-if="trip.budget" class="flex-1 h-1.5 rounded-full bg-white overflow-hidden min-w-8">
+          <span class="block h-full rounded-full" :class="overBudget ? 'bg-[#c50f1f]' : 'bg-[#107c10]'" :style="{ width: `${Math.min(100, (totalCost / trip.budget) * 100)}%` }"></span>
+        </span>
+        <span v-else class="flex-1"></span>
+        <span v-if="members.length > 1 && totalCost" class="text-ink-3 shrink-0">每人約 {{ fmtCost(Math.round(totalCost / members.length)) }}</span>
+      </button>
 
-        <!-- 沒指定的路段用這個方式；每一段仍可另外改 -->
-        <div class="px-3 pt-2 bg-white">
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-ink-3 shrink-0">預設</span>
-            <div class="flex gap-1 overflow-x-auto no-scrollbar">
-              <button v-for="m in DEFAULT_TRAVEL_MODES" :key="m.key" class="chip !h-7" :class="trip.travelMode === m.key ? 'chip-on' : ''" @click="setTravelMode(m.key)">
-                <span>{{ m.emoji }}</span>{{ m.label }}
+      <!-- 分頁 -->
+      <nav class="shrink-0 flex px-2 border-b border-line" @pointerdown.stop>
+        <button
+          v-for="t in tabs"
+          :key="t.key"
+          class="flex-1 h-10 flex items-center justify-center gap-1 text-[13px] border-b-[3px] cursor-pointer whitespace-nowrap"
+          :class="tab === t.key ? 'border-brand font-semibold text-ink' : 'border-transparent text-ink-3 hover:text-ink'"
+          @click="setTab(t.key)"
+        >
+          {{ t.label }}<span v-if="t.badge" class="text-[11px] px-1.5 rounded-full" :class="tab === t.key ? 'bg-accent-light text-accent' : 'bg-hover'">{{ t.badge }}</span>
+        </button>
+      </nav>
+
+      <div ref="scrollEl" class="flex-1 min-h-0 overflow-y-auto thin-scroll bg-[#f7f7f7] overscroll-contain">
+        <!-- ===== 行程 ===== -->
+        <template v-if="tab === 'plan'">
+          <div class="sticky top-0 z-10 bg-white border-b border-line">
+            <div class="flex gap-1.5 px-3 py-2 overflow-x-auto no-scrollbar">
+              <button class="chip" :class="selectedDate === null ? 'chip-on' : ''" @click="selectDate(null)">總覽</button>
+              <button v-for="d in days" :key="d.date" class="chip" :class="selectedDate === d.date ? 'chip-on' : ''" @click="selectDate(d.date)">
+                <span class="size-2 rounded-full" :style="{ background: d.color }"></span>{{ d.title }}
+                <span class="font-normal opacity-70">{{ d.subtitle.replace(/（.*）/, '') }}</span>
+                <span v-if="dayWeather({ date: d.date })" class="leading-none">{{ weatherInfo(dayWeather({ date: d.date }).code).emoji }}</span>
               </button>
             </div>
           </div>
-          <p class="mt-1 text-[11px] leading-4 text-ink-4">點兩地中間的卡片，可改那一段。例如上一段高鐵、下一段機車。</p>
-        </div>
 
-        <!-- 日期篩選 -->
-        <div class="flex gap-1.5 px-3 py-2 overflow-x-auto no-scrollbar shrink-0 border-b border-line bg-white">
-          <button class="chip" :class="selectedDate === null ? 'chip-on' : ''" @click="selectedDate = null">全部</button>
-          <button v-for="d in days" :key="d.date" class="chip" :class="selectedDate === d.date ? 'chip-on' : ''" @click="selectedDate = d.date">
-            <span class="size-2 rounded-full" :style="{ background: d.color }"></span>{{ d.title }}
-          </button>
-          <button v-if="allBackups.length" class="chip" :class="selectedDate === 'unscheduled' ? 'chip-on' : ''" title="所有備選地點" @click="selectedDate = 'unscheduled'">🔖 備選 {{ allBackups.length }}</button>
-        </div>
-
-        <!-- 每日行程 -->
-        <div class="flex-1 min-h-0 overflow-y-auto thin-scroll p-3 space-y-4">
-          <section v-for="g in visibleGroups" :key="g.key">
-            <header class="flex items-center gap-2 mb-2">
-              <span class="w-1 h-5 rounded" :style="{ background: g.color }"></span>
-              <h3 class="font-semibold text-sm whitespace-nowrap shrink-0">{{ g.title }}</h3>
-              <span class="text-xs text-ink-3 truncate min-w-0">{{ g.subtitle }}</span>
-              <div class="flex-1"></div>
-              <span v-if="g.distance" class="text-xs text-ink-3 flex items-center gap-1 whitespace-nowrap shrink-0">
-                <Icon name="route" :size="12" />{{ fmtDistance(g.distance) }}<template v-if="g.duration">・{{ g.legs?.some((l) => l.estimated) ? '約 ' : '' }}{{ fmtDuration(g.duration) }}</template>
-              </span>
-              <span v-if="g.cost" class="text-xs text-ink-3 whitespace-nowrap shrink-0">{{ fmtCost(g.cost) }}</span>
-              <a
-                v-if="g.numbered && g.stops.length"
-                :href="googleDirectionsUrl(g.stops, trip.travelMode)"
-                target="_blank"
-                rel="noopener"
-                class="icon-btn !size-7"
-                :title="g.stops.length > 1 ? '用 Google 地圖導航這天的路線' : '在 Google 地圖查看'"
-                @click.stop
-              >
-                <Icon name="external" :size="14" />
-              </a>
-              <Popover v-if="g.numbered && (g.stops.length > 1 || members.length > 1)" close-on-click placement="bottom-end">
+          <div class="p-3 space-y-5">
+            <!-- 預設交通方式 -->
+            <div class="flex items-center gap-2 text-xs text-ink-3 whitespace-nowrap" title="兩個地點中間的卡片可以改單一路段的交通方式（例如高鐵、飛機）">
+              <span>預設交通</span>
+              <Popover close-on-click>
                 <template #trigger>
-                  <button class="icon-btn !size-7" title="自動排時間、最佳順序、各自出發 / 回程"><Icon name="more" :size="15" /></button>
-                </template>
-                <template v-if="g.stops.length > 1">
-                  <button class="menu-item" @click="scheduleDate = g.date"><Icon name="clock" />自動排時間</button>
-                  <button class="menu-item" :disabled="g.stops.length < 3" :class="g.stops.length < 3 ? 'opacity-50 pointer-events-none' : ''" @click="optimizeDate = g.date">
-                    <Icon name="route" />最佳順序<span v-if="g.stops.length < 3" class="ml-auto text-xs text-ink-4">需 3 個地點</span>
+                  <button class="h-7 px-2.5 rounded-full border border-line-2 bg-white text-ink flex items-center gap-1 cursor-pointer hover:bg-hover">
+                    {{ travelModeInfo(trip.travelMode).emoji }} {{ travelModeInfo(trip.travelMode).label }}<Icon name="chevron-down" :size="12" />
                   </button>
                 </template>
-                <template v-if="members.length > 1">
-                  <div v-if="g.stops.length > 1" class="border-t border-line my-1"></div>
-                  <button class="menu-item" @click="openLanes(g.date, 'depart')"><Icon name="users" />各自出發（從不同地方出發）</button>
-                  <button class="menu-item" @click="openLanes(g.date, 'return')"><Icon name="users" />各自回程（散場各自回家）</button>
-                </template>
+                <button v-for="m in DEFAULT_TRAVEL_MODES" :key="m.key" class="menu-item" @click="setTravelMode(m.key)">
+                  <span class="w-4"><Icon v-if="trip.travelMode === m.key" name="check" :size="14" class="text-accent" /></span>{{ m.emoji }} {{ m.label }}
+                </button>
               </Popover>
-            </header>
-            <div v-if="g.numbered && dayWeather(g)" class="-mt-1 mb-2 pl-3 flex items-center gap-1.5 text-xs text-ink-2" :title="`天氣預報（${dayWeather(g).place}附近，Open-Meteo）`">
-              <span class="text-sm leading-none">{{ weatherInfo(dayWeather(g).code).emoji }}</span>
-              <span>{{ weatherInfo(dayWeather(g).code).label }}</span>
-              <span class="tabular-nums">{{ fmtTemp(dayWeather(g).min) }}–{{ fmtTemp(dayWeather(g).max) }}</span>
-              <span v-if="dayWeather(g).rain != null" class="tabular-nums" :class="dayWeather(g).rain >= 50 ? 'text-accent font-semibold' : 'text-ink-3'">☔ 降雨 {{ dayWeather(g).rain }}%</span>
+              <span class="truncate text-ink-4">點兩地中間的卡片可改單一路段</span>
             </div>
-            <div v-else-if="g.numbered && g.date > weatherWindow.to" class="-mt-1 mb-2 pl-3 text-[11px] text-ink-4">出發前 {{ FORECAST_DAYS }} 天內會顯示天氣預報</div>
 
-            <DayLanes
-              v-if="g.numbered && (g.departLanes.length || laneOpen[`${g.date}|depart`])"
-              phase="depart"
-              :lanes="g.departLanes"
-              :meeting="g.stops[0] || null"
+            <div v-if="!stops.length" class="rounded-xl border border-dashed border-line-2 bg-white px-4 py-6 text-center">
+              <div class="text-2xl mb-1">🗺️</div>
+              <div class="text-sm font-semibold mb-1">開始安排行程</div>
+              <p class="text-xs leading-5 text-ink-3">在地圖上方搜尋地點（全世界都可以），<br />或直接點地圖上的店家、長按地圖任意位置加入。</p>
+              <button class="btn btn-primary !rounded-full mt-3" @click="focusSearch"><Icon name="search" :size="15" />搜尋地點</button>
+            </div>
+
+            <section v-for="g in visibleGroups" :key="g.key">
+              <header class="flex items-center gap-2 mb-1">
+                <span class="w-1 h-5 rounded" :style="{ background: g.color }"></span>
+                <h3 class="font-semibold text-sm whitespace-nowrap shrink-0">{{ g.title }}</h3>
+                <span class="text-xs text-ink-3 truncate min-w-0">{{ g.subtitle }}</span>
+                <div class="flex-1"></div>
+                <span v-if="g.cost" class="text-xs text-ink-3 whitespace-nowrap shrink-0">{{ fmtCost(g.cost) }}</span>
+                <a
+                  v-if="g.stops.length"
+                  :href="googleDirectionsUrl(g.stops, trip.travelMode)"
+                  target="_blank"
+                  rel="noopener"
+                  class="icon-btn !size-7"
+                  :title="g.stops.length > 1 ? '用 Google 地圖導航這天的路線' : '在 Google 地圖查看'"
+                  @click.stop
+                >
+                  <Icon name="external" :size="14" />
+                </a>
+                <Popover close-on-click placement="bottom-end">
+                  <template #trigger>
+                    <button class="icon-btn !size-7" title="自動排時間、最佳順序、各自出發 / 回程"><Icon name="more" :size="15" /></button>
+                  </template>
+                  <button class="menu-item" :class="g.stops.length < 2 ? 'opacity-50 pointer-events-none' : ''" @click="scheduleDate = g.date"><Icon name="clock" />自動排時間</button>
+                  <button class="menu-item" :class="g.stops.length < 3 ? 'opacity-50 pointer-events-none' : ''" @click="optimizeDate = g.date">
+                    <Icon name="route" />最佳順序<span v-if="g.stops.length < 3" class="ml-auto text-xs text-ink-4">需 3 個地點</span>
+                  </button>
+                  <template v-if="members.length > 1">
+                    <div class="border-t border-line my-1"></div>
+                    <button class="menu-item" @click="openLanes(g.date, 'depart')"><Icon name="users" />各自出發（從不同地方出發）</button>
+                    <button class="menu-item" @click="openLanes(g.date, 'return')"><Icon name="users" />各自回程（散場各自回家）</button>
+                  </template>
+                  <div class="border-t border-line my-1"></div>
+                  <button class="menu-item" @click="newBooking('flight', g.date)"><span class="w-4">🎫</span>新增這天的預訂</button>
+                </Popover>
+              </header>
+
+              <!-- 天氣、時差、距離 -->
+              <div class="mb-2 pl-3 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-ink-3">
+                <span v-if="dayWeather(g)" class="flex items-center gap-1 text-ink-2" :title="`天氣預報（${dayWeather(g).place}附近，Open-Meteo）`">
+                  <span class="text-sm leading-none">{{ weatherInfo(dayWeather(g).code).emoji }}</span>
+                  {{ weatherInfo(dayWeather(g).code).label }}
+                  <span class="tabular-nums">{{ fmtTemp(dayWeather(g).min) }}–{{ fmtTemp(dayWeather(g).max) }}</span>
+                  <span v-if="dayWeather(g).rain != null" class="tabular-nums" :class="dayWeather(g).rain >= 50 ? 'text-accent font-semibold' : ''">☔ {{ dayWeather(g).rain }}%</span>
+                </span>
+                <span v-else-if="g.date > weatherWindow.to" class="text-[11px] text-ink-4">出發前 {{ FORECAST_DAYS }} 天內會顯示天氣</span>
+                <span v-if="dayOffset(g)" class="text-[11px]">🕐 {{ dayOffset(g) }}</span>
+                <span v-if="g.distance" class="flex items-center gap-1 whitespace-nowrap">
+                  <Icon name="route" :size="12" />{{ fmtDistance(g.distance) }}<template v-if="g.duration">・{{ g.legs?.some((l) => l.estimated) ? '約 ' : '' }}{{ fmtDuration(g.duration) }}</template>
+                </span>
+              </div>
+
+              <!-- 這天的預訂（機票、住宿…） -->
+              <div v-if="g.bookings.length" class="mb-2 space-y-1">
+                <button
+                  v-for="row in g.bookings"
+                  :key="`${row.booking.id}-${row.role}`"
+                  type="button"
+                  class="w-full flex items-center gap-2 rounded-lg bg-[#eef4fb] hover:bg-[#e2ecf8] px-2.5 py-1.5 text-left cursor-pointer"
+                  @click="bookingEditing = row.booking"
+                >
+                  <span class="text-sm shrink-0">{{ bookingKind(row.booking.kind).emoji }}</span>
+                  <span class="text-xs font-semibold tabular-nums shrink-0 text-accent">{{ bookingRowTime(row) }}</span>
+                  <span class="text-xs truncate min-w-0 flex-1">
+                    <span class="font-semibold">{{ row.booking.title }}</span>
+                    <span class="text-ink-3">{{ bookingRowSub(row) }}</span>
+                  </span>
+                  <span v-if="row.booking.reference" class="text-[11px] font-mono text-ink-3 shrink-0">{{ row.booking.reference }}</span>
+                </button>
+              </div>
+
+              <DayLanes
+                v-if="g.departLanes.length || laneOpen[`${g.date}|depart`]"
+                phase="depart"
+                :lanes="g.departLanes"
+                :meeting="g.stops[0] || null"
                 :members="members"
                 :travel-mode="trip.travelMode"
                 :focus-stop-id="focusStopId"
@@ -209,74 +241,68 @@
                 @reorder="(stop, sortOrder) => patchStop(stop, { sortOrder })"
                 @focus="focusStop"
                 @close="laneOpen[`${g.date}|depart`] = false"
-            />
+              />
 
-            <draggable
-              :model-value="g.stops"
-              item-key="id"
-              group="stops"
-              class="space-y-1.5 min-h-10 rounded"
-              ghost-class="drag-ghost"
-              :animation="150"
-              :delay="250"
-              :delay-on-touch-only="true"
-              :force-fallback="true"
-              :fallback-on-body="true"
-              fallback-class="drag-fallback"
-              filter=".no-drag"
-              :prevent-on-filter="false"
-              @change="(e) => onDragChange(e, g)"
-            >
-              <template #item="{ element: s, index }">
-                <div>
-                  <StopCard
-                    :stop="s"
-                    :label="g.numbered ? index + 1 : '備'"
-                    :color="g.numbered ? g.color : backupColor(s)"
-                    :backup="!g.numbered"
-                    :tag="!g.numbered && s.date ? `${dayTitle(s.date)}備選` : ''"
-                    :focused="focusStopId === s.id"
-                    :weather="g.numbered ? stopWeather(s) : null"
-                    @focus="focusStop(s)"
-                    @edit="editStop(s)"
-                  >
-                    <template #menu>
-                      <button class="menu-item" @click="editStop(s)"><Icon name="pencil" />編輯</button>
-                      <template v-if="g.numbered">
+              <draggable
+                :model-value="g.stops"
+                item-key="id"
+                group="stops"
+                class="space-y-1.5 min-h-10 rounded"
+                ghost-class="drag-ghost"
+                :animation="150"
+                :delay="250"
+                :delay-on-touch-only="true"
+                :force-fallback="true"
+                :fallback-on-body="true"
+                fallback-class="drag-fallback"
+                filter=".no-drag"
+                :prevent-on-filter="false"
+                @change="(e) => onDragChange(e, g)"
+              >
+                <template #item="{ element: s, index }">
+                  <div>
+                    <StopCard
+                      :stop="s"
+                      :label="index + 1"
+                      :color="g.color"
+                      :focused="focusStopId === s.id"
+                      :weather="stopWeather(s)"
+                      @focus="openStopCard(s)"
+                      @edit="editStop(s)"
+                    >
+                      <template #menu>
+                        <button class="menu-item" @click="editStop(s)"><Icon name="pencil" />編輯</button>
                         <button class="menu-item" @click="backupTarget = s"><Icon name="move" />沒開？換成備選…</button>
                         <button class="menu-item" @click="moveToBackup(s)"><Icon name="tag" />移到這天的備選</button>
+                        <div class="border-t border-line my-1"></div>
+                        <button class="menu-item !text-[#c50f1f]" @click="deleteStop(s)"><Icon name="trash" />刪除</button>
                       </template>
-                      <div v-else class="max-h-64 overflow-y-auto thin-scroll">
-                        <button v-for="d in days" :key="d.date" class="menu-item" @click="scheduleBackup(s, d.date)"><Icon name="calendar" />排入{{ d.title }}（{{ d.subtitle }}）</button>
-                      </div>
-                      <div class="border-t border-line my-1"></div>
-                      <button class="menu-item !text-[#c50f1f]" @click="deleteStop(s)"><Icon name="trash" />刪除</button>
-                    </template>
-                  </StopCard>
-                  <SegmentCard
-                    v-if="g.numbered && index < g.stops.length - 1"
-                    :seg="seg(g, index)"
-                    :mode="g.stops[index + 1].arriveMode || null"
-                    :default-label="travelModeInfo(trip.travelMode).label"
-                    :caption="`這一段前往「${g.stops[index + 1].title}」`"
-                    :fare="g.stops[index + 1].arriveCost ?? null"
-                    :rail-url="googleSegmentUrl(s, g.stops[index + 1], seg(g, index).info.key)"
-                    :color="g.color"
-                    @mode="(m) => setArriveMode(g.stops[index + 1], m)"
-                    @fare="editStop(g.stops[index + 1], 'arriveCost')"
-                  />
-                </div>
-              </template>
-            </draggable>
-            <div v-if="!g.stops.length" class="text-xs text-ink-4 px-1 -mt-8 mb-2 h-8 flex items-center pointer-events-none">
-              {{ g.numbered ? '拖曳地點到這裡，或搜尋新增' : '還沒有備選。搜尋時按「＋備選」，或拖曳地點到這裡' }}
-            </div>
+                    </StopCard>
+                    <SegmentCard
+                      v-if="index < g.stops.length - 1"
+                      :seg="seg(g, index)"
+                      :mode="g.stops[index + 1].arriveMode || null"
+                      :default-label="travelModeInfo(trip.travelMode).label"
+                      :caption="`這一段前往「${g.stops[index + 1].title}」`"
+                      :fare="g.stops[index + 1].arriveCost ?? null"
+                      :fare-currency="g.stops[index + 1].currency"
+                      :rail-url="googleSegmentUrl(s, g.stops[index + 1], seg(g, index).info.key)"
+                      :color="g.color"
+                      @mode="(m) => setArriveMode(g.stops[index + 1], m)"
+                      @fare="editStop(g.stops[index + 1], 'arriveCost')"
+                    />
+                  </div>
+                </template>
+              </draggable>
+              <div v-if="!g.stops.length" class="text-xs text-ink-4 px-1 -mt-8 mb-2 h-8 flex items-center pointer-events-none">
+                搜尋或點地圖加入地點，也可以從其他天拖曳過來
+              </div>
 
-            <DayLanes
-              v-if="g.numbered && (g.returnLanes.length || laneOpen[`${g.date}|return`])"
-              phase="return"
-              :lanes="g.returnLanes"
-              :meeting="g.stops[g.stops.length - 1] || null"
+              <DayLanes
+                v-if="g.returnLanes.length || laneOpen[`${g.date}|return`]"
+                phase="return"
+                :lanes="g.returnLanes"
+                :meeting="g.stops[g.stops.length - 1] || null"
                 :members="members"
                 :travel-mode="trip.travelMode"
                 :focus-stop-id="focusStopId"
@@ -287,71 +313,135 @@
                 @reorder="(stop, sortOrder) => patchStop(stop, { sortOrder })"
                 @focus="focusStop"
                 @close="laneOpen[`${g.date}|return`] = false"
-            />
+              />
 
-            <!-- 這天的備選：不排序號、不連線、不計入時間與預算 -->
-            <div v-if="g.numbered && g.backups.length" class="mt-2">
-              <button type="button" class="flex items-center gap-1 h-6 px-1 text-xs text-ink-3 hover:text-ink cursor-pointer" @click="collapsedBackups[g.date] = !collapsedBackups[g.date]">
-                <Icon name="chevron-down" :size="12" class="transition-transform" :class="collapsedBackups[g.date] ? '-rotate-90' : ''" />
-                🔖 這天的備選（{{ g.backups.length }}）
-              </button>
-              <draggable
-                v-show="!collapsedBackups[g.date]"
-                :model-value="g.backups"
-                item-key="id"
-                group="stops"
-                class="space-y-1 mt-1 min-h-6"
-                ghost-class="drag-ghost"
-                :animation="150"
-                :delay="250"
-                :delay-on-touch-only="true"
-                :force-fallback="true"
-                :fallback-on-body="true"
-                fallback-class="drag-fallback"
-                filter=".no-drag"
-                :prevent-on-filter="false"
-                @change="(e) => onBackupDragChange(e, g)"
-              >
-                <template #item="{ element: s }">
-                  <div>
-                    <StopCard :stop="s" label="備" :color="g.color" backup :focused="focusStopId === s.id" @focus="focusStop(s)" @edit="editStop(s)">
-                      <template #action>
-                        <button class="no-drag shrink-0 self-center h-7 px-2 rounded text-xs text-accent hover:bg-hover cursor-pointer" title="排入這天的行程（加在最後）" @click.stop="scheduleBackup(s, g.date)">排入</button>
-                      </template>
-                      <template #menu>
-                        <button class="menu-item" @click="editStop(s)"><Icon name="pencil" />編輯</button>
-                        <button class="menu-item" @click="scheduleBackup(s, g.date)"><Icon name="calendar" />排入{{ g.title }}</button>
-                        <button class="menu-item" @click="patchStop(s, { date: null })"><Icon name="tag" />改為未定日期的備選</button>
-                        <div class="border-t border-line my-1"></div>
-                        <button class="menu-item !text-[#c50f1f]" @click="deleteStop(s)"><Icon name="trash" />刪除</button>
-                      </template>
-                    </StopCard>
-                  </div>
-                </template>
-              </draggable>
-            </div>
-          </section>
-        </div>
-      </aside>
+              <!-- 這天的備選：不排序號、不連線、不計入時間與預算 -->
+              <div v-if="g.backups.length" class="mt-2 rounded-xl border border-dashed border-line-2 bg-white/60 px-2 pb-1.5">
+                <button type="button" class="w-full flex items-center gap-1 h-8 px-1 text-xs text-ink-3 hover:text-ink cursor-pointer" @click="collapsedBackups[g.date] = !collapsedBackups[g.date]">
+                  <Icon name="chevron-down" :size="12" class="transition-transform" :class="collapsedBackups[g.date] ? '-rotate-90' : ''" />
+                  🔖 這天的備選（{{ g.backups.length }}）
+                  <span class="ml-auto text-[11px] text-ink-4">臨時沒開時可以換</span>
+                </button>
+                <draggable
+                  v-show="!collapsedBackups[g.date]"
+                  :model-value="g.backups"
+                  item-key="id"
+                  group="stops"
+                  class="space-y-1 min-h-6"
+                  ghost-class="drag-ghost"
+                  :animation="150"
+                  :delay="250"
+                  :delay-on-touch-only="true"
+                  :force-fallback="true"
+                  :fallback-on-body="true"
+                  fallback-class="drag-fallback"
+                  filter=".no-drag"
+                  :prevent-on-filter="false"
+                  @change="(e) => onBackupDragChange(e, g)"
+                >
+                  <template #item="{ element: s }">
+                    <div>
+                      <StopCard :stop="s" label="備" :color="g.color" backup :focused="focusStopId === s.id" @focus="openStopCard(s)" @edit="editStop(s)">
+                        <template #action>
+                          <button class="no-drag shrink-0 self-center h-7 px-2.5 rounded-full bg-accent-light text-xs font-semibold text-accent hover:bg-accent hover:text-white cursor-pointer" title="排入這天的行程（加在最後）" @click.stop="scheduleBackup(s, g.date)">排入</button>
+                        </template>
+                        <template #menu>
+                          <button class="menu-item" @click="editStop(s)"><Icon name="pencil" />編輯</button>
+                          <button class="menu-item" @click="scheduleBackup(s, g.date)"><Icon name="calendar" />排入{{ g.title }}</button>
+                          <button class="menu-item" @click="patchStop(s, { date: null })"><Icon name="tag" />改為未定日期的備選</button>
+                          <div class="border-t border-line my-1"></div>
+                          <button class="menu-item !text-[#c50f1f]" @click="deleteStop(s)"><Icon name="trash" />刪除</button>
+                        </template>
+                      </StopCard>
+                    </div>
+                  </template>
+                </draggable>
+              </div>
+            </section>
 
-      <!-- 地圖 -->
-      <div class="flex-1 min-w-0" :class="mobileTab === 'map' ? 'block' : 'hidden md:block'">
-        <TripMap
-          ref="mapRef"
-          :days="days"
+            <button v-if="undatedBackups.length" type="button" class="w-full rounded-xl border border-dashed border-line-2 bg-white px-3 py-2.5 text-left text-xs text-ink-3 hover:bg-hover cursor-pointer" @click="setTab('backup')">
+              🔖 還有 {{ undatedBackups.length }} 個未定日期的備選 →
+            </button>
+          </div>
+        </template>
+
+        <!-- ===== 備選 ===== -->
+        <BackupPanel
+          v-else-if="tab === 'backup'"
+          v-model:filter="backupFilter"
+          :backups="allBackups"
           :stops="stops"
-          :routes="routes"
-          :lanes="mapLanes"
-          :routing="routing"
-          :selected-date="selectedDate"
+          :days="days"
           :focus-stop-id="focusStopId"
-          @select="onMarkerSelect"
-          @move="onMarkerMove"
+          @focus="openStopCard"
+          @edit="editStop"
+          @schedule="scheduleBackup"
+          @set-day="(s, date) => patchStop(s, { date, isBackup: !!date })"
+          @delete="deleteStop"
         />
+
+        <!-- ===== 預訂 ===== -->
+        <BookingsPanel v-else-if="tab === 'bookings'" :bookings="bookings" :days="days" @add="(kind) => newBooking(kind)" @edit="(b) => (bookingEditing = b)" />
+
+        <!-- ===== 準備 ===== -->
+        <ChecklistPanel
+          v-else
+          :items="checklist"
+          :members="members"
+          :start-date="trip.startDate"
+          @add="addChecklist"
+          @update="updateChecklist"
+          @delete="deleteChecklist"
+        />
+        <div v-if="ui.isMobile" class="h-[env(safe-area-inset-bottom)]"></div>
+      </div>
+    </aside>
+
+    <!-- ===== 地圖 ===== -->
+    <div class="min-w-0" :class="ui.isMobile ? 'absolute inset-0' : 'relative flex-1'">
+      <TripMap
+        ref="mapRef"
+        :days="days"
+        :stops="stops"
+        :routes="routes"
+        :lanes="mapLanes"
+        :routing="routing"
+        :selected-date="mapDate"
+        :focus-stop-id="focusStopId"
+        :preview="preview"
+        :insets="mapInsets"
+        :card-pad="cardPad"
+        @select="openStopCard"
+        @move="onMarkerMove"
+        @place="onMapPlace"
+        @blank="closeCard"
+      />
+
+      <!-- 搜尋列 -->
+      <div class="absolute z-20 top-3 left-3 right-3 md:right-auto md:w-[min(400px,calc(100%-180px))] space-y-2">
+        <PlaceSearch ref="searchRef" :center="searchCenter" :placeholder="laneTarget ? `搜尋${laneTarget.member.displayName}的${laneTarget.phaseLabel}地點` : undefined" @pick="previewPlace" />
+        <div v-if="laneTarget" class="flex items-center gap-2 rounded-xl bg-white card-shadow-hover text-xs px-3 py-2">
+          <Avatar :user="laneTarget.member" :size="22" />
+          <span class="flex-1 min-w-0 leading-4">正在加入 <b>{{ laneTarget.member.displayName }}</b> 的{{ laneTarget.phaseLabel }}地點：搜尋、點地圖上的店家或長按地圖</span>
+          <button class="shrink-0 text-accent hover:underline cursor-pointer" @click="laneTarget = null">取消</button>
+        </div>
+      </div>
+
+      <!-- 地點卡片（電腦：地圖左下） -->
+      <div v-if="!ui.isMobile && (preview || cardStop)" class="absolute z-20 left-3 bottom-8 w-[min(400px,calc(100%-80px))]">
+        <PlaceCard v-bind="cardProps" v-on="cardEvents" />
       </div>
     </div>
 
+    <!-- 地點卡片（手機：蓋在抽屜上面） -->
+    <Transition name="sheet-up">
+      <div v-if="ui.isMobile && (preview || cardStop)" class="absolute z-40 inset-x-0 bottom-0 px-2 pb-[max(8px,env(safe-area-inset-bottom))]">
+        <PlaceCard v-bind="cardProps" sheet-handle v-on="cardEvents" />
+      </div>
+    </Transition>
+
     <StopEditor v-model="editing" :days="days" :saving="saving" @save="saveStop" @delete="deleteStop" />
+    <BookingEditor v-model="bookingEditing" :saving="saving" @save="saveBooking" @delete="deleteBooking" />
     <TripFormDialog v-model="settingsOpen" :trip="trip" @saved="onTripSaved" />
     <BackupPickerDialog
       :target="backupTarget"
@@ -368,8 +458,10 @@
       :stops="stops"
       :days="days"
       :members="members"
+      :bookings="bookings"
       @save-budget="saveBudget"
       @edit="editFromBudget"
+      @edit-booking="(id) => { budgetOpen = false; bookingEditing = bookings.find((b) => b.id === id) || null; }"
     />
     <AutoScheduleDialog
       :group="scheduleGroup"
@@ -386,12 +478,12 @@
       @close="optimizeDate = null"
       @apply="applyOrder"
     />
-  </template>
+  </div>
 </template>
 
 <script setup>
 import {
-  computed, onBeforeUnmount, onMounted, reactive, ref, watch,
+  computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch,
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import draggable from 'vuedraggable';
@@ -400,27 +492,34 @@ import Avatar from '@/components/Avatar.vue';
 import Popover from '@/components/Popover.vue';
 import TripIcon from '@/components/trip/TripIcon.vue';
 import TripMap from '@/components/trip/TripMap.vue';
+import PlaceSearch from '@/components/trip/PlaceSearch.vue';
+import PlaceCard from '@/components/trip/PlaceCard.vue';
 import StopEditor from '@/components/trip/StopEditor.vue';
 import TripFormDialog from '@/components/trip/TripFormDialog.vue';
 import BudgetDialog from '@/components/trip/BudgetDialog.vue';
 import StopCard from '@/components/trip/StopCard.vue';
 import SegmentCard from '@/components/trip/SegmentCard.vue';
 import DayLanes from '@/components/trip/DayLanes.vue';
+import BackupPanel from '@/components/trip/BackupPanel.vue';
+import BookingsPanel from '@/components/trip/BookingsPanel.vue';
+import BookingEditor from '@/components/trip/BookingEditor.vue';
+import ChecklistPanel from '@/components/trip/ChecklistPanel.vue';
 import BackupPickerDialog from '@/components/trip/BackupPickerDialog.vue';
 import AutoScheduleDialog from '@/components/trip/AutoScheduleDialog.vue';
 import OptimizeOrderDialog from '@/components/trip/OptimizeOrderDialog.vue';
 import api, { writes } from '@/api';
-import { sortOrderAt } from '@/utils/planner';
+import { sortOrderAt, diffDays } from '@/utils/planner';
 import {
-  tripDays, fmtTripRange, stopCategory, setCustomCategories, distanceKm, fmtDistance, fmtCost, byStopOrder,
-  sortOrderForTime, searchPlaces, stopTotal, isBackup, isPlanned, isShared,
-  segmentInfo, groupLanes, laneSequence, laneTimes, LANE_PHASES, UNSCHEDULED_COLOR, inTaiwan,
-  parseCoordinates, isGoogleMapsUrl, isShortGoogleUrl, placeFromGoogleUrl,
+  tripDays, fmtTripRange, setCustomCategories, distanceKm, fmtDistance, fmtCost, byStopOrder,
+  sortOrderForTime, stopTotal, isBackup, isPlanned, isShared, tripMoney, toTripMoney, reversePlace,
+  segmentInfo, groupLanes, laneSequence, laneTimes, LANE_PHASES,
   DEFAULT_TRAVEL_MODES, travelModeInfo, planDayRoute, upgradeRailLegs, fmtDuration, googleDirectionsUrl, googleSegmentUrl,
 } from '@/utils/trip';
 import {
-  fetchWeather, weatherKey, weatherInfo, weatherRange, hourlyAt, fmtTemp, FORECAST_DAYS,
+  fetchWeather, weatherKey, weatherInfo, weatherRange, hourlyAt, fmtTemp, offsetText, todayInTaiwan, FORECAST_DAYS,
 } from '@/utils/weather';
+import { loadRates } from '@/utils/currency';
+import { bookingKind, bookingsOnDay, fmtBookingTime } from '@/utils/tripPrep';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { usePlansStore } from '@/stores/plans';
@@ -435,6 +534,8 @@ const tripId = Number(route.params.id);
 const trip = ref(null);
 const members = ref([]);
 const stops = ref([]);
+const bookings = ref([]);
+const checklist = ref([]);
 const error = ref('');
 
 const selectedDate = ref(null);
@@ -443,25 +544,113 @@ const editing = ref(null);
 const saving = ref(false);
 const settingsOpen = ref(false);
 const mapRef = ref(null);
-const query = ref('');
-const results = ref(null);
-const searching = ref(false);
+const searchRef = ref(null);
+const scrollEl = ref(null);
 const memberKeyword = ref('');
-const mobileTab = ref('list');
-const routes = ref({}); // { [date]: { coords, legs } }
+const routes = ref({}); // { [date]: { lines, legs, ids } }
 const routing = ref(false);
-const mobileTabs = [{ key: 'list', label: '行程', icon: 'list' }, { key: 'map', label: '地圖', icon: 'map' }];
 
+/* ---- 分頁 ---- */
+const tab = ref('plan');
+const backupFilter = ref('all');
 const days = computed(() => tripDays(trip.value));
-// 備選：未定日期的放在「備選清單」，有日期的顯示在那天下方
 const allBackups = computed(() => stops.value.filter(isBackup).sort((a, b) => (a.date || '').localeCompare(b.date || '') || byStopOrder(a, b)));
 const undatedBackups = computed(() => allBackups.value.filter((s) => !s.date));
+const tabs = computed(() => [
+  { key: 'plan', label: '行程' },
+  { key: 'backup', label: '🔖 備選', badge: allBackups.value.length || '' },
+  { key: 'bookings', label: '🎫 預訂', badge: bookings.value.length || '' },
+  { key: 'prep', label: '✅ 準備', badge: checklist.value.length ? `${checklist.value.filter((x) => x.done).length}/${checklist.value.length}` : '' },
+]);
+function setTab(key) {
+  tab.value = key;
+  if (key === 'backup' && selectedDate.value) backupFilter.value = selectedDate.value;
+  if (ui.isMobile && sheetSnap.value === 0) sheetSnap.value = 1;
+  scrollEl.value?.scrollTo({ top: 0 });
+}
+function selectDate(date) {
+  selectedDate.value = date;
+  scrollEl.value?.scrollTo({ top: 0 });
+}
+// 地圖顯示哪一天：備選分頁跟著備選的篩選
+const mapDate = computed(() => {
+  if (tab.value !== 'backup') return selectedDate.value;
+  return backupFilter.value === 'all' || backupFilter.value === 'undated' ? 'unscheduled' : backupFilter.value;
+});
+
 const collapsedBackups = reactive({});
 const dayTitle = (date) => days.value.find((d) => d.date === date)?.title || date;
-const backupColor = (s) => days.value.find((d) => d.date === s.date)?.color || UNSCHEDULED_COLOR;
-const totalCost = computed(() => stops.value.filter(isPlanned).reduce((sum, s) => sum + stopTotal(s), 0)); // 備選不計入
+const bookingCost = computed(() => bookings.value.reduce((sum, b) => sum + toTripMoney(b.cost, b.currency), 0));
+const totalCost = computed(() => stops.value.filter(isPlanned).reduce((sum, s) => sum + stopTotal(s), 0) + bookingCost.value); // 備選不計入
 const overBudget = computed(() => !!trip.value?.budget && totalCost.value > trip.value.budget);
 const budgetOpen = ref(false);
+const countdown = computed(() => {
+  if (!trip.value) return '';
+  const today = todayInTaiwan();
+  const n = diffDays(trip.value.startDate, today);
+  if (n > 0) return `${n} 天後出發`;
+  if (today <= trip.value.endDate) return '旅行中';
+  return '';
+});
+
+/* ---- 手機底部抽屜 ---- */
+const rootEl = ref(null);
+const rootHeight = ref(640);
+const sheetSnap = ref(1); // 0 = 只露出標題、1 = 一半、2 = 全螢幕
+const sheetDrag = ref(null);
+const sheetDragging = computed(() => sheetDrag.value != null);
+const PEEK = 150;
+const snaps = computed(() => [PEEK, Math.round(rootHeight.value * 0.52), rootHeight.value - 8]);
+const sheetHeight = computed(() => sheetDrag.value ?? snaps.value[sheetSnap.value]);
+let rootObserver = null;
+
+function onGripDown(e) {
+  if (!ui.isMobile || e.button > 0) return;
+  if (e.target.closest('button, a, input, select, textarea')) return; // 標頭上的按鈕照常點
+  const y0 = e.clientY;
+  const h0 = sheetHeight.value;
+  let last = { y: y0, t: performance.now() };
+  let velocity = 0;
+  let moved = false;
+  const onMove = (ev) => {
+    const dy = ev.clientY - y0;
+    if (Math.abs(dy) > 4) moved = true;
+    if (!moved) return;
+    const now = performance.now();
+    velocity = (ev.clientY - last.y) / Math.max(1, now - last.t);
+    last = { y: ev.clientY, t: now };
+    sheetDrag.value = Math.min(snaps.value[2], Math.max(PEEK - 30, h0 - dy));
+  };
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    if (!moved) {
+      sheetSnap.value = sheetSnap.value === 0 ? 1 : sheetSnap.value === 1 ? 2 : 1;
+      return;
+    }
+    const h = sheetDrag.value;
+    // 快速滑動：往滑的方向切一格；慢慢拖：停在最近的高度
+    let next;
+    const list = snaps.value;
+    if (velocity > 0.5) next = Math.max(0, list.findLastIndex((v) => v < h)); // 往下甩：下一個比現在低的高度
+    else if (velocity < -0.5) next = list.findIndex((v) => v > h); // 往上甩：下一個比現在高的高度
+    if (next === -1) next = 2;
+    if (next == null) next = list.reduce((best, v, i) => (Math.abs(v - h) < Math.abs(list[best] - h) ? i : best), 0);
+    sheetSnap.value = next;
+    sheetDrag.value = null;
+  };
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+}
+
+// 地圖被蓋住的範圍：讓「顯示全部」與聚焦時避開搜尋列和抽屜
+const mapInsets = computed(() => (ui.isMobile
+  ? { top: laneTarget.value ? 116 : 64, bottom: Math.min(sheetHeight.value, snaps.value[1]), left: 0 }
+  : { top: laneTarget.value ? 110 : 60, bottom: 0, left: 0 }));
+// 地點卡片蓋住的高度（電腦在地圖左下、手機比抽屜高一些）：聚焦時往上避開
+const cardPad = computed(() => (preview.value || cardStopId.value ? (ui.isMobile ? 90 : 220) : 0));
 
 /* ---- 分頭路線（各自出發 / 各自回程） ---- */
 const laneRoutes = ref({}); // { [lane.key]: { lines, legs, sig } }
@@ -479,58 +668,37 @@ function lanesFor(date, phase, shared) {
   return allLanes.value.filter((l) => l.date === date && l.phase === phase).map((l) => {
     const seq = laneSequence(phase, l.stops, meeting);
     const sig = laneSig(seq);
-    const route = laneRoutes.value[l.key]?.sig === sig ? laneRoutes.value[l.key] : null;
+    const saved = laneRoutes.value[l.key]?.sig === sig ? laneRoutes.value[l.key] : null;
     return {
-      ...l, member: memberOf(l.memberId), meeting, hasMeeting: !!meeting, seq, sig, legs: route?.legs, lines: route?.lines, times: laneTimes(phase, seq, route?.legs, meeting),
+      ...l, member: memberOf(l.memberId), meeting, hasMeeting: !!meeting, seq, sig, legs: saved?.legs, lines: saved?.lines, times: laneTimes(phase, seq, saved?.legs, meeting),
     };
   });
 }
 
-const groups = computed(() => {
-  const list = days.value.map((d) => {
-    const dayStops = stops.value.filter((s) => s.date === d.date && isShared(s)).sort(byStopOrder);
-    // 路線是依哪個順序算的；順序剛改、還沒重算完時先不用舊的路段
-    const saved = routes.value[d.date];
-    const route = saved?.ids === dayStops.map((s) => s.id).join(',') ? saved : null;
-    const straight = dayStops.slice(1).reduce((sum, s, i) => sum + distanceKm(dayStops[i], s), 0);
-    return {
-      key: d.date,
-      date: d.date,
-      title: d.title,
-      subtitle: d.subtitle,
-      color: d.color,
-      numbered: true,
-      stops: dayStops,
-      backups: stops.value.filter((s) => s.date === d.date && s.isBackup).sort(byStopOrder),
-      departLanes: lanesFor(d.date, 'depart', dayStops),
-      returnLanes: lanesFor(d.date, 'return', dayStops),
-      cost: dayStops.reduce((sum, s) => sum + stopTotal(s), 0),
-      legs: route?.legs,
-      distance: route ? route.legs.reduce((sum, l) => sum + l.distance, 0) : straight,
-      duration: route ? route.legs.reduce((sum, l) => sum + (l.duration || 0), 0) : 0,
-    };
-  });
-  list.push({
-    key: 'unscheduled',
-    date: null,
-    title: '🔖 備選清單',
-    subtitle: selectedDate.value === 'unscheduled' ? '全部備選' : '未定日期',
-    color: UNSCHEDULED_COLOR,
-    numbered: false,
-    stops: selectedDate.value === 'unscheduled' ? allBackups.value : undatedBackups.value,
-    backups: [],
-    departLanes: [],
-    returnLanes: [],
-    cost: 0,
-    distance: 0,
-  });
-  return list;
-});
-const visibleGroups = computed(() => {
-  if (!selectedDate.value) return groups.value.filter((g) => g.date || g.stops.length);
-  if (selectedDate.value === 'unscheduled') return groups.value.filter((g) => !g.date);
-  return groups.value.filter((g) => g.date === selectedDate.value);
-});
+const groups = computed(() => days.value.map((d) => {
+  const dayStops = stops.value.filter((s) => s.date === d.date && isShared(s)).sort(byStopOrder);
+  // 路線是依哪個順序算的；順序剛改、還沒重算完時先不用舊的路段
+  const saved = routes.value[d.date];
+  const dayRoute = saved?.ids === dayStops.map((s) => s.id).join(',') ? saved : null;
+  const straight = dayStops.slice(1).reduce((sum, s, i) => sum + distanceKm(dayStops[i], s), 0);
+  return {
+    key: d.date,
+    date: d.date,
+    title: d.title,
+    subtitle: d.subtitle,
+    color: d.color,
+    stops: dayStops,
+    backups: stops.value.filter((s) => s.date === d.date && s.isBackup).sort(byStopOrder),
+    bookings: bookingsOnDay(bookings.value, d.date),
+    departLanes: lanesFor(d.date, 'depart', dayStops),
+    returnLanes: lanesFor(d.date, 'return', dayStops),
+    cost: dayStops.reduce((sum, s) => sum + stopTotal(s), 0),
+    legs: dayRoute?.legs,
+    distance: dayRoute ? dayRoute.legs.reduce((sum, l) => sum + l.distance, 0) : straight,
+    duration: dayRoute ? dayRoute.legs.reduce((sum, l) => sum + (l.duration || 0), 0) : 0,
+  };
+}));
+const visibleGroups = computed(() => (selectedDate.value ? groups.value.filter((g) => g.date === selectedDate.value) : groups.value));
 
 const memberCandidates = computed(() => {
   const kw = memberKeyword.value.trim().toLowerCase();
@@ -542,6 +710,8 @@ function applyTripData(data) {
   trip.value = data.trip;
   members.value = data.members;
   stops.value = data.stops;
+  bookings.value = data.bookings || [];
+  checklist.value = data.checklist || [];
   setCustomCategories(data.categories || []);
 }
 
@@ -553,6 +723,12 @@ async function load() {
     error.value = e.message;
   }
 }
+
+// 行程幣別：金額顯示與換算都用它
+watch(() => trip.value?.currency, (c) => {
+  tripMoney.currency = c || 'TWD';
+  loadRates(tripMoney.currency);
+}, { immediate: true });
 
 /* ---- 自動同步：其他成員的變更不用重新整理就會出現 ----
  * 每 10 秒查一次版本碼（只有幾個彙總數字），變了才重新載入完整資料；分頁在背景時暫停，切回來立刻檢查。
@@ -594,6 +770,14 @@ onBeforeUnmount(() => {
   clearInterval(syncTimer);
   document.removeEventListener('visibilitychange', onVisible);
   window.removeEventListener('focus', onVisible);
+  rootObserver?.disconnect();
+});
+watch(rootEl, (el) => {
+  rootObserver?.disconnect();
+  if (!el) return;
+  rootObserver = new ResizeObserver(() => { rootHeight.value = el.clientHeight; });
+  rootObserver.observe(el);
+  rootHeight.value = el.clientHeight;
 });
 
 const upsertStop = (s) => {
@@ -602,87 +786,157 @@ const upsertStop = (s) => {
   else stops.value.push(s);
 };
 
-/* ---- 新增地點 ---- */
-let searchTimer = null;
-let searchAbort = null;
-let searchSeq = 0;
-const googleMapsSearchUrl = computed(() => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${query.value.trim()} 台灣`)}`);
-const canceled = (e) => e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError' || e?.name === 'AbortError';
+/* ---- 搜尋與地點卡片 ---- */
+const preview = ref(null); // 還沒加入的地點
+const cardStopId = ref(null); // 正在看的行程地點
+const cardStop = computed(() => (cardStopId.value ? stops.value.find((s) => s.id === cardStopId.value) || null : null));
+let reverseSeq = 0;
 
+// 搜尋以地圖目前位置為中心；地圖還沒準備好時用行程地點的中心
 function searchCenter() {
-  const located = stops.value.filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lng));
-  const day = selectedDate.value && selectedDate.value !== 'unscheduled'
-    ? located.filter((s) => s.date === selectedDate.value)
-    : [];
-  const pool = day.length ? day : located;
-  if (!pool.length) return { lat: 25.047, lng: 121.517 };
-  return {
-    lat: pool.reduce((sum, s) => sum + s.lat, 0) / pool.length,
-    lng: pool.reduce((sum, s) => sum + s.lng, 0) / pool.length,
-  };
+  const c = mapRef.value?.getCenter();
+  if (c) return c;
+  const located = stops.value.filter((s) => Number.isFinite(s.lat));
+  return located.length ? { ...centerOf(located), zoom: 12 } : null;
+}
+function focusSearch() {
+  if (ui.isMobile) sheetSnap.value = 0;
+  searchRef.value?.focus();
 }
 
-const searchNote = ref('');
+function previewPlace(place) {
+  cardStopId.value = null;
+  preview.value = place;
+  if (ui.isMobile) sheetSnap.value = 0;
+}
 
-/**
- * 搜尋順序：
- *  1. 座標（例如 25.0339, 121.5645）
- *  2. Google 地圖連結：從網址讀出名稱與座標；短網址先由後端解析出完整網址
- *  3. 一般文字：OpenStreetMap（Photon）
- */
-async function search() {
-  clearTimeout(searchTimer);
-  const q = query.value.trim();
-  searchNote.value = '';
-  if (q.length < 2) {
-    results.value = null;
-    return;
-  }
-  searchAbort?.abort();
-  const ac = new AbortController();
-  searchAbort = ac;
-  const seq = ++searchSeq;
-  const done = (rows, note = '') => {
-    if (seq !== searchSeq) return;
-    results.value = rows;
-    searchNote.value = note;
-    searching.value = false;
-  };
-  const outside = (p) => !inTaiwan(p.lat, p.lng);
-
-  const coords = parseCoordinates(q);
-  if (coords) {
-    if (outside(coords)) done([], '這個座標不在台灣範圍內');
-    else done([{ title: '座標位置', address: `${coords.lat}, ${coords.lng}`, ...coords }]);
-    return;
-  }
-
-  searching.value = true;
-  try {
-    if (isGoogleMapsUrl(q)) {
-      const url = isShortGoogleUrl(q) ? (await api.post('/places/resolve', { url: q }, { signal: ac.signal })).url : q;
-      const place = placeFromGoogleUrl(url);
-      if (place?.lat != null) {
-        if (outside(place)) done([], '這個地點不在台灣範圍內');
-        else done([{ title: place.title, address: 'Google 地圖連結', lat: place.lat, lng: place.lng }]);
-      } else if (place?.title) {
-        done(await searchPlaces(place.title, ac.signal, searchCenter()), `連結沒有座標，改用「${place.title}」搜尋`);
-      } else {
-        done([], '這個連結沒有位置資訊，請在 Google 地圖開啟地點後再按「分享」複製連結');
-      }
-      return;
+async function onMapPlace(p) {
+  const my = ++reverseSeq;
+  if (!p.reverse) {
+    // 地圖上的店家：名稱已知，背景補上地址
+    previewPlace(p);
+    if (p.address) return;
+    const found = await reversePlace(p.lat, p.lng);
+    if (my === reverseSeq && preview.value?.title === p.title && found.address && !/^-?\d/.test(found.address)) {
+      preview.value = { ...preview.value, address: found.address };
     }
-    done(await searchPlaces(q, ac.signal, searchCenter()));
+    return;
+  }
+  // 長按 / 右鍵：先放圖釘，再查這裡的地址
+  previewPlace({ title: '地圖上的位置', address: '查詢地址中…', lat: p.lat, lng: p.lng });
+  const found = await reversePlace(p.lat, p.lng);
+  if (my === reverseSeq && preview.value) preview.value = { ...found, lat: p.lat, lng: p.lng };
+}
+
+function openStopCard(s) {
+  preview.value = null;
+  cardStopId.value = s.id;
+  focusStop(s);
+  if (ui.isMobile) sheetSnap.value = 0;
+}
+function closeCard() {
+  preview.value = null;
+  cardStopId.value = null;
+}
+
+const cardLabel = computed(() => {
+  const s = cardStop.value;
+  if (!s) return '';
+  if (isBackup(s)) return '備';
+  if (s.memberId) return memberOf(s.memberId).displayName.slice(0, 1);
+  const i = groups.value.find((g) => g.date === s.date)?.stops.findIndex((x) => x.id === s.id);
+  return i >= 0 ? i + 1 : '';
+});
+const cardColor = computed(() => {
+  const s = cardStop.value;
+  if (!s) return '#8a8886';
+  if (s.memberId) return memberOf(s.memberId).color;
+  return days.value.find((d) => d.date === s.date)?.color || '#8a8886';
+});
+const cardProps = computed(() => ({
+  place: preview.value,
+  stop: preview.value ? null : cardStop.value,
+  days: days.value,
+  stops: stops.value,
+  defaultDate: selectedDate.value || days.value[0]?.date || null,
+  lane: laneTarget.value,
+  label: cardLabel.value,
+  color: cardColor.value,
+  saving: saving.value,
+}));
+const cardEvents = {
+  close: closeCard,
+  add: quickAdd,
+  detail: openDetail,
+  edit: (s) => editStop(s),
+  schedule: (s, date) => {
+    scheduleBackup(s, date);
+    ui.toast(`已排入${dayTitle(date)}`, 'success');
+  },
+  backup: (s) => moveToBackup(s),
+  replace: (s) => { backupTarget.value = s; },
+  delete: (s) => deleteStop(s),
+};
+
+// 從卡片直接加入（不用開編輯視窗）
+async function quickAdd({ date, backup, category }) {
+  const place = preview.value;
+  if (!place) return;
+  const lane = laneTarget.value;
+  if (lane) {
+    laneTarget.value = null;
+    preview.value = null;
+    editing.value = {
+      title: place.title,
+      address: place.address,
+      lat: place.lat,
+      lng: place.lng,
+      category: 'transport',
+      date: lane.date,
+      isBackup: false,
+      memberId: lane.member.id,
+      phase: lane.phase,
+      lane: { name: lane.member.displayName, phase: lane.phase, phaseLabel: lane.phaseLabel },
+    };
+    return;
+  }
+  saving.value = true;
+  try {
+    const stop = await api.post(`/trips/${tripId}/stops`, {
+      title: place.title.slice(0, 100),
+      address: (place.address && place.address !== '查詢地址中…' ? place.address : '').slice(0, 200) || null,
+      lat: place.lat,
+      lng: place.lng,
+      category,
+      date: date || null,
+      isBackup: !!backup,
+    });
+    upsertStop(stop);
+    preview.value = null;
+    searchRef.value?.clear();
+    ui.toast(backup ? `已將「${stop.title}」放到${date ? `${dayTitle(date)}的` : ''}備選` : `已將「${stop.title}」加入${dayTitle(date)}`, 'success');
+    if (!backup && date && selectedDate.value && selectedDate.value !== date) selectedDate.value = date;
+    openStopCard(stop);
   } catch (e) {
-    if (seq !== searchSeq || canceled(e) || e.status === 401) return;
-    searching.value = false;
     ui.error(e);
+  } finally {
+    saving.value = false;
   }
 }
-// 邊打字邊搜尋（停止輸入 400ms 後才查詢）
-function onQueryInput() {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(search, 400);
+
+function openDetail({ date, category }) {
+  const place = preview.value;
+  if (!place) return;
+  preview.value = null;
+  editing.value = {
+    title: place.title,
+    address: place.address === '查詢地址中…' ? '' : place.address,
+    lat: place.lat,
+    lng: place.lng,
+    category,
+    date: date || days.value[0]?.date || null,
+    isBackup: false,
+  };
 }
 
 /* ---- 道路路線 ---- */
@@ -700,9 +954,9 @@ async function computeRoutes() {
       const dayStops = stops.value.filter((s) => s.date === d.date && isShared(s)).sort(byStopOrder);
       if (dayStops.length < 2) return;
       try {
-        const route = await planDayRoute(dayStops, mode);
-        if (route) {
-          next[d.date] = { ...route, ids: dayStops.map((s) => s.id).join(',') };
+        const r = await planDayRoute(dayStops, mode);
+        if (r) {
+          next[d.date] = { ...r, ids: dayStops.map((s) => s.id).join(',') };
           pendingRail.push({ date: d.date, stops: dayStops });
           // 每天算好就先顯示（機車路線需要排隊查詢，不用等全部完成）
           if (seq === routeSeq) routes.value = { ...routes.value, [d.date]: next[d.date] };
@@ -738,7 +992,7 @@ watch(routeKey, () => {
   routeTimer = setTimeout(computeRoutes, 300);
 });
 
-/* ---- 天氣預報 ---- */
+/* ---- 天氣預報（每個地點用當地時間） ---- */
 const weather = ref(new Map());
 const weatherWindow = ref(weatherRange());
 const centerOf = (list) => ({
@@ -761,6 +1015,11 @@ function dayWeather(g) {
   const center = dayCenters.value[g.date];
   const daily = center && weather.value.get(weatherKey(center))?.daily[g.date];
   return daily ? { ...daily, place: center.place } : null;
+}
+// 當地時差（出國時才顯示）
+function dayOffset(g) {
+  const center = dayCenters.value[g.date];
+  return center ? offsetText(weather.value.get(weatherKey(center))?.offset) : '';
 }
 const stopWeather = (s) => (s.date && s.startTime ? hourlyAt(weather.value.get(weatherKey(s)), s.date, s.startTime) : null);
 
@@ -800,8 +1059,8 @@ async function computeLaneRoutes() {
   const next = {};
   await Promise.all(list.map(async (l) => {
     try {
-      const route = await planDayRoute(l.seq, mode);
-      if (route) next[l.key] = { ...route, sig: l.sig };
+      const r = await planDayRoute(l.seq, mode);
+      if (r) next[l.key] = { ...r, sig: l.sig };
     } catch {
       // 路線服務失敗時以直線顯示
     }
@@ -825,9 +1084,9 @@ watch(laneRouteKey, () => {
   laneRouteTimer = setTimeout(computeLaneRoutes, 300);
 });
 
-// 地圖只在選了某一天時畫分頭路線，避免「全部」時太亂
+// 地圖只在選了某一天時畫分頭路線，避免「總覽」時太亂
 const mapLanes = computed(() => {
-  const g = groups.value.find((x) => x.date && x.date === selectedDate.value);
+  const g = groups.value.find((x) => x.date && x.date === mapDate.value);
   if (!g) return [];
   return [...g.departLanes, ...g.returnLanes].map((l) => ({
     key: l.key, color: l.member.color || '#8a8886', name: l.member.displayName, stops: l.stops, seq: l.seq, lines: l.lines,
@@ -835,7 +1094,6 @@ const mapLanes = computed(() => {
 });
 
 const laneTarget = ref(null); // 正在為誰加入分頭路線的地點
-const searchInput = ref(null);
 function openLanes(date, phase) {
   laneOpen[`${date}|${phase}`] = true;
 }
@@ -843,8 +1101,7 @@ function startLaneStop(date, phase, memberId) {
   laneTarget.value = {
     date, phase, member: memberOf(memberId), phaseLabel: LANE_PHASES.find((p) => p.key === phase).label,
   };
-  mobileTab.value = 'list';
-  requestAnimationFrame(() => searchInput.value?.focus());
+  focusSearch();
 }
 const laneInfo = (s) => (s.memberId ? { name: memberOf(s.memberId).displayName, phase: s.phase, phaseLabel: LANE_PHASES.find((p) => p.key === s.phase)?.label } : null);
 
@@ -871,40 +1128,6 @@ async function setTravelMode(mode) {
   }
 }
 
-const defaultDate = () => (selectedDate.value && selectedDate.value !== 'unscheduled' ? selectedDate.value : days.value[0]?.date ?? null);
-
-function openNewStop(place, asBackup = false) {
-  results.value = null;
-  query.value = '';
-  const day = selectedDate.value && selectedDate.value !== 'unscheduled' ? selectedDate.value : null;
-  const lane = laneTarget.value;
-  laneTarget.value = null;
-  if (lane) {
-    editing.value = {
-      title: place.title,
-      address: place.address,
-      lat: place.lat,
-      lng: place.lng,
-      category: 'transport',
-      date: lane.date,
-      isBackup: false,
-      memberId: lane.member.id,
-      phase: lane.phase,
-      lane: { name: lane.member.displayName, phase: lane.phase, phaseLabel: lane.phaseLabel },
-    };
-    return;
-  }
-  editing.value = {
-    title: place.title,
-    address: place.address,
-    lat: place.lat,
-    lng: place.lng,
-    category: 'sight',
-    date: asBackup ? day : defaultDate(),
-    isBackup: asBackup,
-  };
-}
-
 /* ---- 編輯 / 儲存地點 ---- */
 const dayStopsOf = (date) => stops.value.filter((s) => s.date === date && isShared(s));
 // 某天最後面的 sortOrder（排入時加在最後）
@@ -929,6 +1152,7 @@ async function saveStop(form) {
     address: form.address,
     cost: form.cost,
     arriveCost: form.arriveCost,
+    currency: form.currency || null,
     notes: form.notes,
     lat: form.lat,
     lng: form.lng,
@@ -949,8 +1173,7 @@ async function saveStop(form) {
       : await api.post(`/trips/${tripId}/stops`, payload);
     upsertStop(stop);
     editing.value = null;
-    results.value = null;
-    query.value = '';
+    searchRef.value?.clear();
     focusStopId.value = stop.id;
     if (!form.id) {
       const msg = stop.memberId ? `已加入${laneInfo(stop).name}的${laneInfo(stop).phaseLabel}路線` : stop.isBackup || !stop.date ? `已將「${stop.title}」放到備選` : `已將「${stop.title}」加入行程`;
@@ -970,6 +1193,7 @@ async function deleteStop(s) {
     await api.delete(`/trips/${tripId}/stops/${s.id}`);
     stops.value = stops.value.filter((x) => x.id !== s.id);
     editing.value = null;
+    if (cardStopId.value === s.id) cardStopId.value = null;
   } catch (e) {
     ui.error(e);
   }
@@ -992,10 +1216,7 @@ function onDragChange(e, g) {
   if (!evt) return;
   const s = evt.element;
   const list = g.stops.filter((x) => x.id !== s.id);
-  const sortOrder = sortOrderAt(list, evt.newIndex);
-  if (g.date) patchStop(s, { date: g.date, isBackup: false, sortOrder });
-  // 備選清單：拖進來變成未定日期；在「全部備選」裡調整順序時保留原本的日期
-  else patchStop(s, e.added ? { date: null, isBackup: false, sortOrder } : { sortOrder });
+  patchStop(s, { date: g.date, isBackup: false, sortOrder: sortOrderAt(list, evt.newIndex) });
 }
 function onBackupDragChange(e, g) {
   const evt = e.added || e.moved;
@@ -1036,7 +1257,7 @@ async function replaceWithBackup(b) {
   ]);
   if (ok) {
     ui.toast(`已換成「${b.title}」，「${t.title}」移到備選`, 'success');
-    focusStop(b);
+    openStopCard(b);
   }
 }
 
@@ -1047,7 +1268,7 @@ async function insertBackupAfter(b) {
   const sortOrder = sortOrderAt(list, list.findIndex((x) => x.id === t.id) + 1);
   if (await bulkUpdate([{ id: b.id, date: t.date, isBackup: false, sortOrder }])) {
     ui.toast(`已將「${b.title}」加在「${t.title}」後面`, 'success');
-    focusStop(b);
+    openStopCard(b);
   }
 }
 
@@ -1110,15 +1331,96 @@ function editFromBudget(id, fare) {
   editStop(s, fare ? 'arriveCost' : undefined);
 }
 
+/* ---- 預訂 ---- */
+const bookingEditing = ref(null);
+function newBooking(kind, date) {
+  bookingEditing.value = { kind, startDate: date || '' };
+}
+function bookingRowTime(row) {
+  const b = row.booking;
+  if (row.role === 'stay') return '續住';
+  const v = row.role === 'end' ? b.endAt : b.startAt;
+  const t = fmtBookingTime(v, false);
+  const label = row.role === 'end' ? bookingKind(b.kind).end : bookingKind(b.kind).start;
+  return t && t !== '00:00' ? `${t} ${label}` : label;
+}
+function bookingRowSub(row) {
+  const b = row.booking;
+  if (b.kind === 'hotel') return b.fromPlace ? `・${b.fromPlace}` : '';
+  if (b.fromPlace || b.toPlace) return `・${b.fromPlace || ''}${b.toPlace ? ` → ${b.toPlace}` : ''}`;
+  return '';
+}
+async function saveBooking(form) {
+  saving.value = true;
+  try {
+    const { id, ...payload } = form;
+    const row = id ? await api.put(`/trips/${tripId}/bookings/${id}`, payload) : await api.post(`/trips/${tripId}/bookings`, payload);
+    const i = bookings.value.findIndex((b) => b.id === row.id);
+    if (i >= 0) bookings.value[i] = row;
+    else bookings.value.push(row);
+    bookingEditing.value = null;
+    ui.toast(id ? '已儲存預訂' : `已新增「${row.title}」`, 'success');
+  } catch (e) {
+    ui.error(e);
+  } finally {
+    saving.value = false;
+  }
+}
+async function deleteBooking(b) {
+  const ok = await ui.confirm({ title: '刪除預訂', message: `確定要刪除「${b.title}」嗎？` });
+  if (!ok) return;
+  try {
+    await api.delete(`/trips/${tripId}/bookings/${b.id}`);
+    bookings.value = bookings.value.filter((x) => x.id !== b.id);
+    bookingEditing.value = null;
+  } catch (e) {
+    ui.error(e);
+  }
+}
+
+/* ---- 出發前準備 ---- */
+async function addChecklist(items, templateLabel) {
+  if (!items.length) {
+    ui.toast(`「${templateLabel}」的項目都已經在清單裡了`, 'info');
+    return;
+  }
+  try {
+    const rows = await api.post(`/trips/${tripId}/checklist`, { items });
+    checklist.value.push(...rows);
+    if (templateLabel) ui.toast(`已加入 ${rows.length} 個「${templateLabel}」項目`, 'success');
+  } catch (e) {
+    ui.error(e);
+  }
+}
+async function updateChecklist(item, patch) {
+  const i = checklist.value.findIndex((x) => x.id === item.id);
+  const old = { ...item };
+  if (i >= 0) checklist.value[i] = { ...item, ...patch };
+  try {
+    const row = await api.put(`/trips/${tripId}/checklist/${item.id}`, patch);
+    const j = checklist.value.findIndex((x) => x.id === row.id);
+    if (j >= 0) checklist.value[j] = row;
+  } catch (e) {
+    const j = checklist.value.findIndex((x) => x.id === item.id);
+    if (j >= 0) checklist.value[j] = old;
+    ui.error(e);
+  }
+}
+async function deleteChecklist(item) {
+  const before = checklist.value;
+  checklist.value = checklist.value.filter((x) => x.id !== item.id);
+  try {
+    await api.delete(`/trips/${tripId}/checklist/${item.id}`);
+  } catch (e) {
+    checklist.value = before;
+    ui.error(e);
+  }
+}
+
 /* ---- 地圖互動 ---- */
 function focusStop(s) {
   focusStopId.value = null;
   requestAnimationFrame(() => { focusStopId.value = s.id; });
-}
-
-function onMarkerSelect(s) {
-  focusStopId.value = s.id;
-  editStop(s);
 }
 
 function onMarkerMove(s, latlng) {
@@ -1127,7 +1429,7 @@ function onMarkerMove(s, latlng) {
 
 function fitMap() {
   selectedDate.value = null;
-  mapRef.value?.fit();
+  nextTick(() => mapRef.value?.fit());
 }
 
 /* ---- 行程與成員 ---- */
@@ -1156,6 +1458,7 @@ async function removeMember(m) {
     await api.delete(`/trips/${tripId}/members/${m.id}`);
     members.value = members.value.filter((x) => x.id !== m.id);
     stops.value = stops.value.filter((x) => x.memberId !== m.id);
+    checklist.value = checklist.value.map((x) => (x.assigneeId === m.id ? { ...x, assigneeId: null } : x));
   } catch (e) {
     ui.error(e);
   }
@@ -1173,7 +1476,7 @@ async function leave() {
 }
 
 async function removeTrip() {
-  const ok = await ui.confirm({ title: '刪除行程', message: `確定要刪除「${trip.value.name}」嗎？\n所有地點都會一併刪除，無法復原。` });
+  const ok = await ui.confirm({ title: '刪除行程', message: `確定要刪除「${trip.value.name}」嗎？\n所有地點、預訂與準備清單都會一併刪除，無法復原。` });
   if (!ok) return;
   try {
     await api.delete(`/trips/${tripId}`);
@@ -1188,27 +1491,13 @@ load();
 </script>
 
 <style scoped>
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--color-line-2);
-  background: #fff;
-  font-size: 13px;
-  white-space: nowrap;
-  cursor: pointer;
+.sheet-up-enter-active,
+.sheet-up-leave-active {
+  transition: transform 0.2s ease-out, opacity 0.2s;
 }
-.chip:hover {
-  background: var(--color-hover);
-}
-.chip-on {
-  border-color: var(--color-accent);
-  background: var(--color-accent-light);
-  color: var(--color-accent);
-  font-weight: 600;
+.sheet-up-enter-from,
+.sheet-up-leave-to {
+  transform: translateY(24px);
+  opacity: 0;
 }
 </style>

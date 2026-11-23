@@ -19,7 +19,7 @@
               <div class="text-[11px] text-ink-3 flex flex-wrap gap-x-2">
                 <span>距離 {{ fmtDistance(r.km) }}</span>
                 <span>{{ r.tag }}</span>
-                <span v-if="r.stop.cost != null">{{ fmtCost(r.stop.cost) }}</span>
+                <span v-if="r.stop.cost != null">{{ fmtStopMoney(r.stop.cost, r.stop.currency) }}</span>
                 <a :href="googlePlaceUrl(r.stop)" target="_blank" rel="noopener" class="text-accent hover:underline">Google 地圖</a>
               </div>
             </div>
@@ -39,7 +39,7 @@
 import { computed } from 'vue';
 import Modal from '@/components/Modal.vue';
 import {
-  stopCategory, distanceKm, fmtDistance, fmtCost, googlePlaceUrl,
+  stopCategory, distanceKm, fmtDistance, fmtStopMoney, googlePlaceUrl,
 } from '@/utils/trip';
 
 const props = defineProps({

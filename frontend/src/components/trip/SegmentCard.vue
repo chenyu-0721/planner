@@ -20,7 +20,7 @@
           <Icon name="chevron-down" :size="14" class="shrink-0 text-ink-3" />
         </button>
       </template>
-      <div class="w-64">
+      <div class="w-64 max-h-[70vh] overflow-y-auto thin-scroll">
         <div class="px-3 pt-1.5 pb-1 text-xs text-ink-3 truncate">{{ caption }}</div>
         <button class="menu-item" @click="$emit('mode', null)">
           <span class="w-4"><Icon v-if="!mode" name="check" :size="14" class="text-accent" /></span>
@@ -36,6 +36,11 @@
           <span class="w-4"><Icon v-if="mode === m.key" name="check" :size="14" class="text-accent" /></span>
           <span>{{ m.emoji }}</span>{{ m.label }}
         </button>
+        <div class="px-3 pt-2 pb-0.5 text-[11px] font-semibold text-ink-4">長途 · 依距離估算時間</div>
+        <button v-for="m in longModes" :key="m.key" class="menu-item" @click="$emit('mode', m.key)">
+          <span class="w-4"><Icon v-if="mode === m.key" name="check" :size="14" class="text-accent" /></span>
+          <span>{{ m.emoji }}</span>{{ m.label }}
+        </button>
         <div class="border-t border-line my-1"></div>
         <button class="menu-item" @click="$emit('mode', lineMode.key)">
           <span class="w-4"><Icon v-if="mode === lineMode.key" name="check" :size="14" class="text-accent" /></span>
@@ -44,20 +49,20 @@
         <div class="border-t border-line my-1"></div>
         <button class="menu-item" @click="$emit('fare')">
           <span class="w-4"><Icon name="wallet" :size="14" /></span>
-          {{ fare ? `交通費 ${fmtCost(fare)}` : '填寫這段交通費' }}
+          {{ fare ? `交通費 ${fmtCost(fare, fareCurrency)}` : '填寫這段交通費' }}
         </button>
       </div>
     </Popover>
     <a
-      v-if="seg.info.kind === 'rail' && railUrl"
+      v-if="railUrl && (['rail', 'air', 'sea'].includes(seg.info.kind) || seg.info.key === 'bus')"
       :href="railUrl"
       target="_blank"
       rel="noopener"
       class="inline-flex shrink-0 items-center gap-0.5 self-center h-7 px-1.5 rounded text-xs text-accent hover:bg-black/5"
-      title="在 Google 地圖查詢實際班次"
+      :title="seg.info.kind === 'air' ? '在 Google 航班查詢班次與票價' : '在 Google 地圖查詢實際班次'"
       @click.stop
     >
-      查班次<Icon name="external" :size="11" />
+      {{ seg.info.kind === 'air' ? '查航班' : '查班次' }}<Icon name="external" :size="11" />
     </a>
   </div>
 </template>
@@ -73,6 +78,7 @@ defineProps({
   defaultLabel: { type: String, required: true },
   caption: { type: String, default: '' }, // 選單上方的說明，例如「這一段前往「X」」
   fare: { type: Number, default: null },
+  fareCurrency: { type: String, default: null },
   railUrl: { type: String, default: '' },
   color: { type: String, required: true },
   indent: { type: Boolean, default: true },
@@ -82,5 +88,6 @@ defineEmits(['mode', 'fare']);
 
 const roadModes = TRAVEL_MODES.filter((m) => m.kind === 'road');
 const railModes = TRAVEL_MODES.filter((m) => m.kind === 'rail');
+const longModes = TRAVEL_MODES.filter((m) => m.kind === 'air' || m.kind === 'sea');
 const lineMode = TRAVEL_MODES.find((m) => m.kind === 'line');
 </script>

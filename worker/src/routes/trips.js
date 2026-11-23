@@ -3,7 +3,7 @@ import {
   and, eq, asc, inArray, count, or, lt, gt, isNull, isNotNull, max, sum,
 } from 'drizzle-orm';
 import {
-  trips, tripMembers, tripStops, users, stopCategories,
+  trips, tripMembers, tripStops, users, stopCategories, tripBookings, tripChecklist,
 } from '../db/schema.js';
 import { HttpError } from '../lib/errors.js';
 import {
@@ -13,6 +13,7 @@ import { requireAuth } from '../lib/auth.js';
 import { listCategories, categoryJson } from './stopCategories.js';
 import {
   LIMITS, STOP_CATEGORIES, MAX_TRIP_DAYS, TRAVEL_MODES, DEFAULT_TRAVEL_MODES, LANE_PHASES, requireText, optionalText,
+  BOOKING_KINDS, CHECKLIST_SECTIONS, MAX_BOOKINGS, MAX_CHECKLIST, CURRENCY_RE,
 } from '../lib/limits.js';
 
 const router = new Hono();
@@ -53,6 +54,14 @@ async function assertTripAccess(c, tripId) {
 function moneyOrNull(value, label) {
   const v = value === '' || value == null ? null : Number(value);
   if (v != null && (!Number.isFinite(v) || v < 0 || v > 1e9)) throw new HttpError(400, `${label}不正確`);
+  return v;
+}
+
+// 幣別：空值（跟隨行程）或 ISO 4217 代碼
+function currencyOrNull(value) {
+  if (value == null || value === '') return null;
+  const v = String(value).trim().toUpperCase();
+  if (!CURRENCY_RE.test(v)) throw new HttpError(400, '幣別不正確');
   return v;
 }
 
@@ -107,6 +116,7 @@ function stopFields(trip, b, partial) {
   if (has('notes')) patch.notes = optionalText(b.notes, LIMITS.stopNotes, '備註') || null;
   if (has('cost')) patch.cost = moneyOrNull(b.cost, '花費');
   if (has('arriveCost')) patch.arriveCost = moneyOrNull(b.arriveCost, '交通費');
+  if (has('currency')) patch.currency = currencyOrNull(b.currency);
   if (has('customCategoryId')) patch.customCategoryId = b.customCategoryId == null ? null : toId(b.customCategoryId);
   if (has('arriveMode')) {
     if (b.arriveMode && !TRAVEL_MODES.includes(b.arriveMode)) throw new HttpError(400, '交通方式不正確');
@@ -139,12 +149,14 @@ const tripJson = (t) => ({
   color: t.color,
   travelMode: t.routeMode,
   budget: t.budget,
+  currency: t.currency,
   ownerId: t.ownerId,
   createdAt: t.createdAt,
   updatedAt: t.updatedAt,
 });
 
 const stopJson = ({ createdAt, updatedAt, ...s }) => s;
+const rowJson = ({ createdAt, updatedAt, ...r }) => r;
 
 // 我的行程
 router.get('/', async (c) => {
@@ -182,6 +194,7 @@ router.post('/', async (c) => {
     startDate: b.startDate,
     endDate: b.endDate,
     color: Number.isInteger(b.color) && b.color >= 0 && b.color < 12 ? b.color : Math.floor(Math.random() * 12),
+    currency: currencyOrNull(b.currency) || 'TWD',
     ownerId: user.id,
   }).returning().get();
   await db.insert(tripMembers).values({
@@ -203,6 +216,10 @@ router.get('/:id', async (c) => {
     stops: db.select().from(tripStops).where(eq(tripStops.tripId, tripId))
       .orderBy(asc(tripStops.date), asc(tripStops.sortOrder), asc(tripStops.id)),
     categories: listCategories(db),
+    bookings: db.select().from(tripBookings).where(eq(tripBookings.tripId, tripId))
+      .orderBy(asc(tripBookings.startAt), asc(tripBookings.id)),
+    checklist: db.select().from(tripChecklist).where(eq(tripChecklist.tripId, tripId))
+      .orderBy(asc(tripChecklist.sortOrder), asc(tripChecklist.id)),
     touch: db.update(tripMembers).set({ lastViewedAt: nowIso() })
       .where(and(eq(tripMembers.tripId, tripId), eq(tripMembers.userId, user.id))),
   });
@@ -213,6 +230,8 @@ router.get('/:id', async (c) => {
     members: r.members.map((m) => ({ ...safeUser(m.user), tripRole: m.tripRole })),
     stops: r.stops.map(stopJson),
     categories: r.categories.map(categoryJson),
+    bookings: r.bookings.map(rowJson),
+    checklist: r.checklist.map(rowJson),
   });
 });
 
@@ -229,6 +248,8 @@ router.get('/:id/version', async (c) => {
     categories: db.select({ n: count(), at: max(stopCategories.updatedAt) }).from(stopCategories),
     users: db.select({ at: max(users.updatedAt) }).from(tripMembers).innerJoin(users, eq(users.id, tripMembers.userId))
       .where(eq(tripMembers.tripId, tripId)),
+    bookings: db.select({ n: count(), ids: sum(tripBookings.id), at: max(tripBookings.updatedAt) }).from(tripBookings).where(eq(tripBookings.tripId, tripId)),
+    checklist: db.select({ n: count(), ids: sum(tripChecklist.id), at: max(tripChecklist.updatedAt) }).from(tripChecklist).where(eq(tripChecklist.tripId, tripId)),
   });
   const [access] = r.access;
   const trip = checkTripAccess(user, access);
@@ -236,7 +257,9 @@ router.get('/:id/version', async (c) => {
   const [mb] = r.members;
   const [ct] = r.categories;
   const [us] = r.users;
-  return c.json({ v: [trip.updatedAt, st.n, st.ids, st.at, mb.n, mb.ids, ct.n, ct.at, us.at].join('|') });
+  const [bk] = r.bookings;
+  const [cl] = r.checklist;
+  return c.json({ v: [trip.updatedAt, st.n, st.ids, st.at, mb.n, mb.ids, ct.n, ct.at, us.at, bk.n, bk.ids, bk.at, cl.n, cl.ids, cl.at].join('|') });
 });
 
 router.put('/:id', async (c) => {
@@ -252,6 +275,7 @@ router.put('/:id', async (c) => {
     patch.routeMode = b.travelMode;
   }
   if (b.budget !== undefined) patch.budget = moneyOrNull(b.budget, '預算');
+  if (b.currency !== undefined) patch.currency = currencyOrNull(b.currency) || 'TWD';
   if (b.startDate !== undefined || b.endDate !== undefined) {
     patch.startDate = b.startDate ?? trip.startDate;
     patch.endDate = b.endDate ?? trip.endDate;
@@ -303,6 +327,7 @@ router.delete('/:id/members/:userId', async (c) => {
   await db.batch([
     db.delete(tripMembers).where(and(eq(tripMembers.tripId, trip.id), eq(tripMembers.userId, userId))),
     db.delete(tripStops).where(and(eq(tripStops.tripId, trip.id), eq(tripStops.memberId, userId))),
+    db.update(tripChecklist).set({ assigneeId: null }).where(and(eq(tripChecklist.tripId, trip.id), eq(tripChecklist.assigneeId, userId))),
   ]);
   return c.json({ ok: true });
 });
@@ -365,6 +390,140 @@ router.delete('/:id/stops/:stopId', async (c) => {
     .where(and(eq(tripStops.id, toId(c.req.param('stopId'))), eq(tripStops.tripId, trip.id)))
     .returning({ id: tripStops.id }).get();
   if (!deleted) throw new HttpError(404, '找不到地點');
+  return c.json({ ok: true });
+});
+
+/* ---- 預訂（機票、住宿、車票…） ---- */
+// 「YYYY-MM-DD」或「YYYY-MM-DDTHH:MM」（當地時間；沒填時間就只存日期）
+const DATETIME_RE = /^\d{4}-\d{2}-\d{2}(T([01]\d|2[0-3]):[0-5]\d)?$/;
+// 其中一邊沒有時間時只比日期
+const endsBefore = (start, end) => {
+  const n = start.length === end.length ? start.length : 10;
+  return end.slice(0, n) < start.slice(0, n);
+};
+function datetimeOrNull(value, label) {
+  if (value == null || value === '') return null;
+  const v = String(value).slice(0, 16);
+  if (!DATETIME_RE.test(v)) throw new HttpError(400, `${label}格式不正確`);
+  return v;
+}
+
+function bookingFields(b, partial) {
+  const patch = {};
+  const has = (k) => b[k] !== undefined;
+  if (!partial || has('kind')) patch.kind = BOOKING_KINDS.includes(b.kind) ? b.kind : 'other';
+  if (!partial || has('title')) patch.title = requireText(b.title, LIMITS.bookingTitle, '名稱');
+  if (has('startAt')) patch.startAt = datetimeOrNull(b.startAt, '開始時間');
+  if (has('endAt')) patch.endAt = datetimeOrNull(b.endAt, '結束時間');
+  if (has('fromPlace')) patch.fromPlace = optionalText(b.fromPlace, LIMITS.bookingPlace, '地點')?.trim() || null;
+  if (has('toPlace')) patch.toPlace = optionalText(b.toPlace, LIMITS.bookingPlace, '地點')?.trim() || null;
+  if (has('reference')) patch.reference = optionalText(b.reference, LIMITS.bookingReference, '訂位代號')?.trim() || null;
+  if (has('cost')) patch.cost = moneyOrNull(b.cost, '金額');
+  if (has('currency')) patch.currency = currencyOrNull(b.currency);
+  if (has('notes')) patch.notes = optionalText(b.notes, LIMITS.bookingNotes, '備註') || null;
+  if (has('url')) {
+    const url = optionalText(b.url, LIMITS.bookingUrl, '連結')?.trim() || null;
+    if (url && !/^https?:\/\//i.test(url)) throw new HttpError(400, '連結請以 http:// 或 https:// 開頭');
+    patch.url = url;
+  }
+  return patch;
+}
+
+router.post('/:id/bookings', async (c) => {
+  const trip = await assertTripAccess(c, c.req.param('id'));
+  const fields = bookingFields(await c.req.json(), false);
+  if (fields.startAt && fields.endAt && endsBefore(fields.startAt, fields.endAt)) throw new HttpError(400, '結束時間不可早於開始時間');
+  const db = getDb(c);
+  const { n } = await db.select({ n: count() }).from(tripBookings).where(eq(tripBookings.tripId, trip.id)).get();
+  if (n >= MAX_BOOKINGS) throw new HttpError(400, `每個行程最多 ${MAX_BOOKINGS} 筆預訂`);
+  const row = await db.insert(tripBookings).values({ ...fields, tripId: trip.id, createdById: c.get('user').id }).returning().get();
+  return c.json(rowJson(row), 201);
+});
+
+router.put('/:id/bookings/:bookingId', async (c) => {
+  const trip = await assertTripAccess(c, c.req.param('id'));
+  const patch = bookingFields(await c.req.json(), true);
+  const db = getDb(c);
+  const where = and(eq(tripBookings.id, toId(c.req.param('bookingId'))), eq(tripBookings.tripId, trip.id));
+  const current = await db.select().from(tripBookings).where(where).get();
+  if (!current) throw new HttpError(404, '找不到預訂');
+  const startAt = patch.startAt !== undefined ? patch.startAt : current.startAt;
+  const endAt = patch.endAt !== undefined ? patch.endAt : current.endAt;
+  if (startAt && endAt && endsBefore(startAt, endAt)) throw new HttpError(400, '結束時間不可早於開始時間');
+  const row = Object.keys(patch).length ? await db.update(tripBookings).set(patch).where(where).returning().get() : current;
+  return c.json(rowJson(row));
+});
+
+router.delete('/:id/bookings/:bookingId', async (c) => {
+  const trip = await assertTripAccess(c, c.req.param('id'));
+  const deleted = await getDb(c).delete(tripBookings)
+    .where(and(eq(tripBookings.id, toId(c.req.param('bookingId'))), eq(tripBookings.tripId, trip.id)))
+    .returning({ id: tripBookings.id }).get();
+  if (!deleted) throw new HttpError(404, '找不到預訂');
+  return c.json({ ok: true });
+});
+
+/* ---- 出發前準備清單 ---- */
+async function checkAssignee(db, trip, assigneeId) {
+  if (assigneeId == null) return;
+  const member = await db.select({ id: tripMembers.id }).from(tripMembers)
+    .where(and(eq(tripMembers.tripId, trip.id), eq(tripMembers.userId, assigneeId))).get();
+  if (!member) throw new HttpError(400, '負責人必須是行程成員');
+}
+
+function checklistFields(b, partial) {
+  const patch = {};
+  const has = (k) => b[k] !== undefined;
+  if (!partial || has('title')) patch.title = requireText(b.title, LIMITS.checklistItem, '項目');
+  if (!partial || has('section')) patch.section = CHECKLIST_SECTIONS.includes(b.section) ? b.section : 'other';
+  if (has('done')) patch.done = !!b.done;
+  if (has('assigneeId')) patch.assigneeId = b.assigneeId == null ? null : toId(b.assigneeId);
+  if (has('sortOrder')) patch.sortOrder = Number(b.sortOrder) || 0;
+  return patch;
+}
+
+// 新增一個項目，或一次新增多個（套用範本）：{ items: [{ title, section }] }
+router.post('/:id/checklist', async (c) => {
+  const trip = await assertTripAccess(c, c.req.param('id'));
+  const b = await c.req.json();
+  const many = Array.isArray(b.items);
+  const list = many ? b.items : [b];
+  if (!list.length || list.length > 60) throw new HttpError(400, '項目數量不正確');
+  const db = getDb(c);
+  const stats = await db.select({ n: count(), top: max(tripChecklist.sortOrder) }).from(tripChecklist).where(eq(tripChecklist.tripId, trip.id)).get();
+  if (stats.n + list.length > MAX_CHECKLIST) throw new HttpError(400, `每個行程最多 ${MAX_CHECKLIST} 個準備項目`);
+  const rows = [];
+  let order = stats.top ?? 0;
+  for (const item of list) {
+    const fields = checklistFields(item || {}, false);
+    await checkAssignee(db, trip, fields.assigneeId);
+    order += 1;
+    rows.push({ sortOrder: order, ...fields, tripId: trip.id });
+  }
+  // D1 每個查詢最多 100 個參數：一筆一個 INSERT，放在同一個 batch 一次送出
+  const created = (await db.batch(rows.map((r) => db.insert(tripChecklist).values(r).returning()))).flat();
+  return c.json(many ? created.map(rowJson) : rowJson(created[0]), 201);
+});
+
+router.put('/:id/checklist/:itemId', async (c) => {
+  const trip = await assertTripAccess(c, c.req.param('id'));
+  const patch = checklistFields(await c.req.json(), true);
+  const db = getDb(c);
+  await checkAssignee(db, trip, patch.assigneeId);
+  const where = and(eq(tripChecklist.id, toId(c.req.param('itemId'))), eq(tripChecklist.tripId, trip.id));
+  const row = Object.keys(patch).length
+    ? await db.update(tripChecklist).set(patch).where(where).returning().get()
+    : await db.select().from(tripChecklist).where(where).get();
+  if (!row) throw new HttpError(404, '找不到項目');
+  return c.json(rowJson(row));
+});
+
+router.delete('/:id/checklist/:itemId', async (c) => {
+  const trip = await assertTripAccess(c, c.req.param('id'));
+  const deleted = await getDb(c).delete(tripChecklist)
+    .where(and(eq(tripChecklist.id, toId(c.req.param('itemId'))), eq(tripChecklist.tripId, trip.id)))
+    .returning({ id: tripChecklist.id }).get();
+  if (!deleted) throw new HttpError(404, '找不到項目');
   return c.json({ ok: true });
 });
 

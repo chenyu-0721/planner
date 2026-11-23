@@ -54,7 +54,8 @@ const cache = new Map();
  * @param {string} startDate
  * @param {string} endDate
  * @returns {Promise<Map<string, { daily: Record<string, object>, hourly: Record<string, object> }>>}
- *   key 為 weatherKey；daily[YYYY-MM-DD] = { code, max, min, rain }；hourly['YYYY-MM-DDTHH:00'] = { code, temp, rain }
+ *   key 為 weatherKey；daily[YYYY-MM-DD] = { code, max, min, rain }；hourly['YYYY-MM-DDTHH:00'] = { code, temp, rain }（當地時間）
+ *   offset：當地與 UTC 的時差（秒），timezone：例如 Asia/Tokyo
  */
 export async function fetchWeather(points, startDate, endDate, signal) {
   const range = weatherRange();
@@ -73,7 +74,7 @@ export async function fetchWeather(points, startDate, endDate, signal) {
     longitude: keys.map((k) => k.split(',')[1]).join(','),
     daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
     hourly: 'temperature_2m,precipitation_probability,weather_code',
-    timezone: 'Asia/Taipei',
+    timezone: 'auto', // 每個地點用當地時間（出國時行程時間也是當地時間）
     start_date: from,
     end_date: to,
   });
@@ -100,10 +101,22 @@ export async function fetchWeather(points, startDate, endDate, signal) {
       if (h.weather_code[j] == null) return;
       hourly[time] = { code: h.weather_code[j], temp: h.temperature_2m[j], rain: h.precipitation_probability[j] };
     });
-    result.set(keys[i], { daily, hourly });
+    result.set(keys[i], {
+      daily, hourly, offset: loc.utc_offset_seconds ?? null, timezone: loc.timezone || '',
+    });
   });
   cache.set(cacheKey, { at: Date.now(), data: result });
   return result;
+}
+
+const TAIWAN_OFFSET = 8 * 3600;
+/** 當地時差說明，例如「當地時間比台灣快 1 小時」；與台灣相同時回傳空字串 */
+export function offsetText(offset) {
+  if (offset == null || offset === TAIWAN_OFFSET) return '';
+  const diff = (offset - TAIWAN_OFFSET) / 3600;
+  const h = Math.abs(diff);
+  const hText = Number.isInteger(h) ? `${h}` : h.toFixed(1);
+  return `當地比台灣${diff > 0 ? '快' : '慢'} ${hText} 小時`;
 }
 
 /** 某時間（HH:MM）所在整點的預報，30 分以後取下一個整點 */

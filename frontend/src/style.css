@@ -90,6 +90,13 @@ body {
   .menu {
     @apply bg-white rounded-md shadow-[0_8px_16px_rgba(0,0,0,.14),0_0_2px_rgba(0,0,0,.12)] py-1 min-w-44 z-50;
   }
+  /* 圓角篩選標籤（行程的日期、備選篩選） */
+  .chip {
+    @apply inline-flex items-center gap-1.5 shrink-0 h-[30px] px-3 rounded-full border border-line-2 bg-white text-[13px] whitespace-nowrap cursor-pointer hover:bg-hover;
+  }
+  .chip-on {
+    @apply border-accent bg-accent-light text-accent font-semibold hover:bg-accent-light;
+  }
   .menu-item {
     @apply flex w-full items-center gap-2.5 px-3 h-8 text-sm text-ink hover:bg-hover cursor-pointer text-left whitespace-nowrap;
   }

@@ -22,6 +22,11 @@
         縮短日期後，超出範圍的地點會移到「備選清單」，不會被刪除。
       </p>
       <div>
+        <label class="field-label">結算幣別</label>
+        <CurrencySelect v-model="form.currency" />
+        <p class="mt-1 text-[11px] leading-4 text-ink-4">預算與合計用這個幣別；每個地點、預訂可以填當地幣別，會依匯率自動換算。</p>
+      </div>
+      <div>
         <label class="field-label">描述（選用）</label>
         <textarea v-model="form.description" rows="3" maxlength="500" class="input !h-auto py-1.5 resize-none"></textarea>
       </div>
@@ -57,6 +62,7 @@ import Modal from '../Modal.vue';
 import Icon from '../Icon.vue';
 import TripIcon from './TripIcon.vue';
 import DateInput from '../DateInput.vue';
+import CurrencySelect from './CurrencySelect.vue';
 import api from '@/api';
 import { PLAN_COLORS, addDays, diffDays, todayStr } from '@/utils/planner';
 
@@ -84,6 +90,7 @@ watch(() => props.modelValue, async (v) => {
     startDate: t?.startDate || addDays(todayStr(), 7),
     endDate: t?.endDate || addDays(todayStr(), 9),
     color: t?.color ?? Math.floor(Math.random() * PLAN_COLORS.length),
+    currency: t?.currency || 'TWD',
   });
   await nextTick();
   nameEl.value?.focus();

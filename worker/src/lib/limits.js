@@ -23,6 +23,12 @@ export const LIMITS = {
   stopNotes: 1000,
   categoryEmoji: 16, // 一個 emoji 可能由多個字元組成（例如國旗、膚色）
   categoryLabel: 20,
+  bookingTitle: 100,
+  bookingPlace: 200,
+  bookingReference: 60,
+  bookingUrl: 1000,
+  bookingNotes: 1000,
+  checklistItem: 100,
 };
 export const MAX_CUSTOM_CATEGORIES = 60;
 export const LANE_PHASES = ['depart', 'return'];
@@ -34,8 +40,14 @@ export const PRIORITY_VALUES = [1, 3, 5, 9];
 export const STOP_CATEGORIES = ['sight', 'food', 'hotel', 'transport', 'shopping', 'activity', 'other'];
 export const MAX_TRIP_DAYS = 60;
 // 交通方式：每一段可個別設定；行程預設只能選道路類（高鐵 / 火車 / 捷運只適用於單一路段）
-export const TRAVEL_MODES = ['car', 'scooter', 'bike', 'foot', 'hsr', 'train', 'mrt', 'straight'];
+export const TRAVEL_MODES = ['car', 'scooter', 'bike', 'foot', 'bus', 'hsr', 'train', 'mrt', 'flight', 'ferry', 'straight'];
 export const DEFAULT_TRAVEL_MODES = ['car', 'scooter', 'bike', 'foot', 'straight'];
+export const BOOKING_KINDS = ['flight', 'hotel', 'train', 'car', 'ticket', 'other'];
+export const CHECKLIST_SECTIONS = ['docs', 'money', 'booking', 'packing', 'other'];
+export const MAX_BOOKINGS = 200;
+export const MAX_CHECKLIST = 300;
+// 幣別：ISO 4217 三個大寫英文字母（前端提供常用清單）
+export const CURRENCY_RE = /^[A-Z]{3}$/;
 export const PREVIEW_TYPES = ['automatic', 'noPreview', 'checklist', 'description', 'reference'];
 
 // 檢查必填與長度，回傳 trim 後的字串

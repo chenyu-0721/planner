@@ -2,7 +2,9 @@ import { sql } from 'drizzle-orm';
 import {
   sqliteTable, integer, text, real, primaryKey, uniqueIndex, index, check,
 } from 'drizzle-orm/sqlite-core';
-import { LIMITS, STOP_CATEGORIES } from '../lib/limits.js';
+import {
+  LIMITS, STOP_CATEGORIES, BOOKING_KINDS, CHECKLIST_SECTIONS,
+} from '../lib/limits.js';
 
 // SQLite 不會檢查 VARCHAR 長度，所以用 CHECK 限制字數與可用值
 const maxLen = (name, column, max) => check(name, sql`length(${column}) <= ${sql.raw(String(max))}`);
@@ -177,6 +179,7 @@ export const trips = sqliteTable('trips', {
   travelMode: text('travel_mode').notNull().default('car'), // 已停用（舊欄位，保留以免重建資料表），改用 route_mode
   routeMode: text('route_mode').notNull().default('car'), // 行程預設交通方式，可用值見 DEFAULT_TRAVEL_MODES（由 API 檢查）
   budget: real('budget'), // 預算上限（選填，由 API 檢查範圍）
+  currency: text('currency').notNull().default('TWD'), // 結算幣別（ISO 4217），預算與合計都換算成這個幣別
   ownerId: integer('owner_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -237,6 +240,7 @@ export const tripStops = sqliteTable('trip_stops', {
   isBackup: integer('is_backup', { mode: 'boolean' }).notNull().default(false), // 備選：有日期 = 這天的備選；沒日期的地點一律視為備選
   customCategoryId: integer('custom_category_id').references(() => stopCategories.id, { onDelete: 'set null' }), // 自訂圖標；空值 = 使用 category 的內建圖標
   arriveCost: real('arrive_cost'), // 從前一個地點到這裡的交通費（例如高鐵票），計入「交通」預算
+  currency: text('currency'), // 花費與交通費的幣別；空值 = 行程的結算幣別
   sortOrder: real('sort_order').notNull().default(0),
   createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
@@ -249,4 +253,50 @@ export const tripStops = sqliteTable('trip_stops', {
   oneOf('trip_stops_category', t.category, STOP_CATEGORIES),
   check('trip_stops_lat', sql`${t.lat} between -90 and 90`),
   check('trip_stops_lng', sql`${t.lng} between -180 and 180`),
+]);
+
+// 預訂：機票、住宿、車票、租車、門票等（時間為當地時間 YYYY-MM-DDTHH:MM）
+export const tripBookings = sqliteTable('trip_bookings', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  tripId: integer('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull().default('other'),
+  title: text('title').notNull(), // 例如「CI100 長榮航空」「新宿華盛頓飯店」
+  startAt: text('start_at'), // 出發 / 入住
+  endAt: text('end_at'), // 抵達 / 退房
+  fromPlace: text('from_place'), // 出發地（機場、車站）或住宿地址
+  toPlace: text('to_place'),
+  reference: text('reference'), // 訂位代號、確認碼
+  cost: real('cost'),
+  currency: text('currency'),
+  url: text('url'),
+  notes: text('notes'),
+  createdById: integer('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('trip_bookings_trip').on(t.tripId),
+  oneOf('trip_bookings_kind', t.kind, BOOKING_KINDS),
+  maxLen('trip_bookings_title_len', t.title, LIMITS.bookingTitle),
+  maxLen('trip_bookings_from_len', t.fromPlace, LIMITS.bookingPlace),
+  maxLen('trip_bookings_to_len', t.toPlace, LIMITS.bookingPlace),
+  maxLen('trip_bookings_reference_len', t.reference, LIMITS.bookingReference),
+  maxLen('trip_bookings_url_len', t.url, LIMITS.bookingUrl),
+  maxLen('trip_bookings_notes_len', t.notes, LIMITS.bookingNotes),
+]);
+
+// 出發前準備清單（護照、簽證、網卡、行李…），可指派給成員
+export const tripChecklist = sqliteTable('trip_checklist', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  tripId: integer('trip_id').notNull().references(() => trips.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  section: text('section').notNull().default('other'),
+  done: integer('done', { mode: 'boolean' }).notNull().default(false),
+  assigneeId: integer('assignee_id').references(() => users.id, { onDelete: 'set null' }),
+  sortOrder: real('sort_order').notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('trip_checklist_trip').on(t.tripId),
+  oneOf('trip_checklist_section', t.section, CHECKLIST_SECTIONS),
+  maxLen('trip_checklist_title_len', t.title, LIMITS.checklistItem),
 ]);

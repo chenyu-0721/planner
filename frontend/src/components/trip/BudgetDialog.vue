@@ -6,7 +6,7 @@
         <div class="flex items-end justify-between gap-3">
           <div>
             <div class="text-xs text-ink-3">預估總花費</div>
-            <div class="text-2xl font-semibold tabular-nums">{{ fmtCost(budget.total) || '$0' }}</div>
+            <div class="text-2xl font-semibold tabular-nums">{{ fmtCost(budget.total) }}</div>
             <div v-if="members.length > 1 && budget.total && !hasPersonal" class="text-xs text-ink-3">{{ members.length }} 人平均每人約 {{ fmtCost(Math.round(budget.total / members.length)) }}</div>
           </div>
           <div class="w-36 shrink-0">
@@ -35,14 +35,14 @@
       </div>
 
       <p v-if="!budget.total" class="text-sm text-ink-3 leading-6">
-        還沒有填任何花費。編輯地點時可以填「預估花費」（依地點類別歸類）與「到這裡的交通費」（車票、油錢等，計入交通）。
+        還沒有填任何花費。編輯地點時可以填「預估花費」（依地點類別歸類）與「到這裡的交通費」（車票、油錢等，計入交通）；機票、住宿等預訂的金額也會算進來。外幣會自動換算。
       </p>
 
       <template v-else>
         <!-- 每人：共同花費平分，加上自己的各自出發 / 回程花費 -->
         <section v-if="members.length > 1 && hasPersonal">
           <h3 class="text-sm font-semibold mb-1">每人</h3>
-          <p class="text-[11px] text-ink-4 mb-2">共同花費 {{ fmtCost(budget.shared) || '$0' }} 由 {{ members.length }} 人平分，再加上各自出發 / 回程的花費</p>
+          <p class="text-[11px] text-ink-4 mb-2">共同花費 {{ fmtCost(budget.shared) }} 由 {{ members.length }} 人平分，再加上各自出發 / 回程的花費</p>
           <div class="space-y-1">
             <div v-for="m in perPerson" :key="m.id" class="flex items-center gap-2 py-0.5">
               <Avatar :user="m" :size="22" />
@@ -75,12 +75,15 @@
               </button>
               <ul v-if="open[g.key]" class="ml-7 mb-2 border-l border-line pl-3">
                 <li v-for="(it, i) in g.items" :key="i">
-                  <button type="button" class="w-full flex items-center gap-2 py-1 text-left cursor-pointer hover:bg-hover rounded" @click="$emit('edit', it.id, !!it.fare)">
+                  <button type="button" class="w-full flex items-center gap-2 py-1 text-left cursor-pointer hover:bg-hover rounded" @click="it.bookingId ? $emit('edit-booking', it.bookingId) : $emit('edit', it.id, !!it.fare)">
                     <span class="flex-1 min-w-0">
                       <span class="block truncate text-sm">{{ it.label }}</span>
                       <span class="block text-[11px] text-ink-4">{{ it.sub }}</span>
                     </span>
-                    <span class="text-sm tabular-nums shrink-0">{{ fmtCost(it.amount) }}</span>
+                    <span class="shrink-0 text-right">
+                      <span class="block text-sm tabular-nums">{{ fmtCost(it.amount) }}</span>
+                      <span v-if="it.original" class="block text-[11px] text-ink-4 tabular-nums">{{ it.original }}</span>
+                    </span>
                   </button>
                 </li>
               </ul>
@@ -104,6 +107,13 @@
         </section>
       </template>
       <p v-if="budget.backup" class="text-xs text-ink-4">備選地點的花費（{{ fmtCost(budget.backup) }}）不計入總額。</p>
+      <div class="rounded-md bg-hover px-3 py-2 text-[11px] leading-5 text-ink-3">
+        以 {{ currencyInfo(tripMoney.currency).flag }} {{ currencyInfo(tripMoney.currency).name }}（{{ tripMoney.currency }}）結算，可在「行程設定」更改。
+        <template v-if="foreign.length">
+          外幣依當日匯率換算：{{ foreign.map((c) => rateText(c, tripMoney.currency)).filter(Boolean).join('、') || '匯率載入中…' }}。
+          匯率來源 <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener" class="underline">ExchangeRate-API</a>，實際金額以刷卡或換匯為準。
+        </template>
+      </div>
     </div>
   </Modal>
 </template>
@@ -113,7 +123,8 @@ import { computed, reactive, ref, watch } from 'vue';
 import Modal from '@/components/Modal.vue';
 import Icon from '@/components/Icon.vue';
 import Avatar from '@/components/Avatar.vue';
-import { computeBudget, fmtCost } from '@/utils/trip';
+import { computeBudget, fmtCost, tripMoney } from '@/utils/trip';
+import { currencyInfo, rateText } from '@/utils/currency';
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -121,11 +132,14 @@ const props = defineProps({
   stops: { type: Array, required: true },
   days: { type: Array, required: true },
   members: { type: Array, default: () => [] },
+  bookings: { type: Array, default: () => [] },
 });
 // edit(stopId, isFare)：點明細開啟該地點編輯
-const emit = defineEmits(['update:modelValue', 'save-budget', 'edit']);
+const emit = defineEmits(['update:modelValue', 'save-budget', 'edit', 'edit-booking']);
 
-const budget = computed(() => computeBudget(props.stops, props.days, props.members));
+const budget = computed(() => computeBudget(props.stops, props.days, props.members, props.bookings));
+// 用到的外幣
+const foreign = computed(() => [...new Set([...props.stops, ...props.bookings].map((x) => x.currency).filter((c) => c && c !== tripMoney.currency))]);
 const hasPersonal = computed(() => Object.keys(budget.value.personal).length > 0);
 const perPerson = computed(() => props.members.map((m) => {
   const own = budget.value.personal[m.id] || 0;
